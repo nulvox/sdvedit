@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stardew Valley Save Editor</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <h1>☆ Stardew Valley Save Editor</h1>
+      <div class="header-actions">
+        <span id="file-label" class="file-label"></span>
+        <button id="save-btn" class="btn-primary" disabled>Download Save</button>
+      </div>
+    </div>
+  </header>
+
+  <div id="load-error" class="error-box" hidden></div>
+
+  <main>
+    <div id="wasm-loading" class="loading-state">
+      <div class="spinner"></div>
+      Loading editor…
+    </div>
+
+    <div id="dropzone" hidden>
+      <div class="dropzone-inner">
+        <div class="dropzone-icon">📁</div>
+        <p>Drop your Stardew Valley save file here</p>
+        <p class="hint">Or click to browse. The save file is named after your farmer
+          (e.g. <code>FarmerName_123456789</code>) with no extension,
+          found in <code>~/.config/StardewValley/Saves/</code> on Linux.</p>
+        <input type="file" id="file-input" accept="*" style="display:none">
+      </div>
+    </div>
+
+    <div id="editor" hidden>
+      <nav class="tab-bar">
+        <button id="tab-player"      class="tab-btn">Player</button>
+        <button id="tab-skills"      class="tab-btn">Skills</button>
+        <button id="tab-friendships" class="tab-btn">Friendships</button>
+        <button id="tab-animals"     class="tab-btn">Animals</button>
+        <button id="tab-buildings"   class="tab-btn">Buildings</button>
+        <button id="tab-inventory"   class="tab-btn">Inventory</button>
+        <button id="tab-world"       class="tab-btn">World</button>
+        <button id="tab-bundles"     class="tab-btn">Bundles</button>
+        <button id="tab-recipes"     class="tab-btn">Recipes</button>
+        <button id="tab-mail"        class="tab-btn">Mail Flags</button>
+        <button id="tab-quests"      class="tab-btn">Quests</button>
+      </nav>
+
+      <div class="panel-container">
+        <div id="panel-player"      class="panel"></div>
+        <div id="panel-skills"      class="panel" hidden></div>
+        <div id="panel-friendships" class="panel" hidden></div>
+        <div id="panel-animals"     class="panel" hidden></div>
+        <div id="panel-buildings"   class="panel" hidden></div>
+        <div id="panel-inventory"   class="panel" hidden></div>
+        <div id="panel-world"       class="panel" hidden></div>
+        <div id="panel-bundles"     class="panel" hidden></div>
+        <div id="panel-recipes"     class="panel" hidden></div>
+        <div id="panel-mail"        class="panel" hidden></div>
+        <div id="panel-quests"      class="panel" hidden></div>
+      </div>
+    </div>
+  </main>
+
+  <div id="toast" class="toast" aria-live="polite"></div>
+
+  <footer>
+    <p>Unofficial fan tool · Not affiliated with ConcernedApe · Always back up your saves first</p>
+  </footer>
+
+  <script src="wasm_exec.js"></script>
+  <script src="bootstrap.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

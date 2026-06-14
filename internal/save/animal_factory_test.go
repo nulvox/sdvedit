@@ -168,6 +168,26 @@ func TestAddAnimal_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestSetAnimalField_Rename(t *testing.T) {
+	root, _ := Parse(strings.NewReader(barnFixture))
+	if err := AddAnimal(root, "barn-building-id", "Cow", "Bessie"); err != nil {
+		t.Fatal(err)
+	}
+	id := GetAnimals(root)[0].ID
+
+	if err := SetAnimalField(root, id, "name", "Buttercup"); err != nil {
+		t.Fatalf("SetAnimalField name: %v", err)
+	}
+
+	animals := GetAnimals(root)
+	if len(animals) != 1 {
+		t.Fatalf("expected 1 animal, got %d", len(animals))
+	}
+	if animals[0].Name != "Buttercup" {
+		t.Errorf("Name = %q after rename, want Buttercup", animals[0].Name)
+	}
+}
+
 func TestAddAnimal_RealSave(t *testing.T) {
 	root := loadReal(t)
 

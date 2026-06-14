@@ -63,6 +63,47 @@ func TestSetPlayerStats_RoundTrip(t *testing.T) {
 	}
 }
 
+const playerHealthFixture = `<?xml version="1.0" encoding="utf-8"?>
+<SaveGame>
+  <player>
+    <name>Trent</name>
+    <health>50</health>
+    <maxHealth>100</maxHealth>
+    <stamina>120</stamina>
+    <maxStamina>270</maxStamina>
+  </player>
+</SaveGame>`
+
+func TestGetPlayerStats_CurrentHealthStamina(t *testing.T) {
+	root, _ := Parse(strings.NewReader(playerHealthFixture))
+	s, err := GetPlayerStats(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Health != 50 {
+		t.Errorf("Health = %d, want 50", s.Health)
+	}
+	if s.Stamina != 120 {
+		t.Errorf("Stamina = %d, want 120", s.Stamina)
+	}
+}
+
+func TestSetPlayerStats_CurrentHealthStamina_RoundTrip(t *testing.T) {
+	root, _ := Parse(strings.NewReader(playerHealthFixture))
+	s, _ := GetPlayerStats(root)
+	s.Health = 100
+	s.Stamina = 270
+	SetPlayerStats(root, s)
+
+	s2, _ := GetPlayerStats(root)
+	if s2.Health != 100 {
+		t.Errorf("Health = %d after patch, want 100", s2.Health)
+	}
+	if s2.Stamina != 270 {
+		t.Errorf("Stamina = %d after patch, want 270", s2.Stamina)
+	}
+}
+
 func TestGetFriendships_Fixture(t *testing.T) {
 	root, _ := Parse(strings.NewReader(friendshipFixture))
 	entries := GetFriendships(root)
@@ -303,6 +344,47 @@ func TestSetPet_RoundTrip(t *testing.T) {
 	}
 }
 
+const petFixture = `<?xml version="1.0" encoding="utf-8"?>
+<SaveGame xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <locations>
+    <GameLocation xsi:type="Farm">
+      <characters>
+        <NPC xsi:type="Pet">
+          <name>Rex</name>
+          <petType>Dog</petType>
+          <whichBreed>0</whichBreed>
+          <friendshipTowardFarmer>100</friendshipTowardFarmer>
+          <timesPet>5</timesPet>
+          <Gender>Male</Gender>
+        </NPC>
+      </characters>
+    </GameLocation>
+  </locations>
+</SaveGame>`
+
+func TestSetPet_TypeAndGender_RoundTrip(t *testing.T) {
+	root, _ := Parse(strings.NewReader(petFixture))
+	pet := GetPet(root)
+	if pet == nil {
+		t.Fatal("no pet in fixture")
+	}
+
+	updated := *pet
+	updated.PetType = "Cat"
+	updated.Gender = "Female"
+	if err := SetPet(root, updated); err != nil {
+		t.Fatalf("SetPet: %v", err)
+	}
+
+	got := GetPet(root)
+	if got.PetType != "Cat" {
+		t.Errorf("PetType = %q, want Cat", got.PetType)
+	}
+	if got.Gender != "Female" {
+		t.Errorf("Gender = %q, want Female", got.Gender)
+	}
+}
+
 func TestRealSave_Bundles(t *testing.T) {
 	root := loadReal(t)
 	bundles := GetBundles(root)
@@ -414,6 +496,65 @@ func TestAddInventoryItem_RoundTripsThroughXML(t *testing.T) {
 	items := GetInventory(root2)
 	if len(items) != 3 || items[0].IsNil || items[0].Stack != 99 {
 		t.Errorf("after round-trip, got %+v", items)
+	}
+}
+
+func TestClearInventorySlot_EmptiesPopulatedSlot(t *testing.T) {
+	root, _ := Parse(strings.NewReader(inventoryFixture))
+
+	if err := ClearInventorySlot(root, 1); err != nil {
+		t.Fatalf("ClearInventorySlot: %v", err)
+	}
+
+	items := GetInventory(root)
+	if len(items) != 3 {
+		t.Fatalf("inventory slot count changed: got %d, want 3", len(items))
+	}
+	if !items[1].IsNil {
+		t.Errorf("slot 1 still populated after clear: %+v", items[1])
+	}
+	if items[1].ItemID != "" {
+		t.Errorf("cleared slot retains itemId %q", items[1].ItemID)
+	}
+}
+
+func TestClearInventorySlot_RejectsEmptySlot(t *testing.T) {
+	root, _ := Parse(strings.NewReader(inventoryFixture))
+	if err := ClearInventorySlot(root, 0); err == nil {
+		t.Fatal("expected error clearing an already-empty slot")
+	}
+}
+
+func TestClearInventorySlot_OutOfRange(t *testing.T) {
+	root, _ := Parse(strings.NewReader(inventoryFixture))
+	if err := ClearInventorySlot(root, 99); err == nil {
+		t.Fatal("expected error for out-of-range slot")
+	}
+}
+
+func TestClearInventorySlot_RoundTripsThroughXML(t *testing.T) {
+	root, _ := Parse(strings.NewReader(inventoryFixture))
+	if err := ClearInventorySlot(root, 1); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := Serialize(root, &buf); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if strings.Contains(out, "<name>Stone</name>") {
+		t.Errorf("cleared item content still serialized: %s", out)
+	}
+	if strings.Count(out, `<Item xsi:nil="true"`) != 3 {
+		t.Errorf("expected three nil Items after clear; got: %s", out)
+	}
+	root2, err := Parse(strings.NewReader(out))
+	if err != nil {
+		t.Fatalf("re-parse: %v", err)
+	}
+	items := GetInventory(root2)
+	if len(items) != 3 || !items[1].IsNil {
+		t.Errorf("after round-trip, slot 1 not nil: %+v", items)
 	}
 }
 

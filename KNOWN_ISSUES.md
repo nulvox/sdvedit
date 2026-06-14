@@ -23,25 +23,50 @@ sketch of the **fix** so anyone picking it up has a starting point.
   an "Add" button. See `internal/save/accessor.go` and `site/app.js`
   `loadInventory`.
 
+### Inventory: empty slots can now be cleared
+
+- **Symptom:** `SetInventoryItem` only edited `stack`/`quality`; there was no
+  inverse to `AddInventoryItem` to turn a populated `<Item>` back into
+  `<Item xsi:nil="true"/>`.
+- **Fix shipped:** `save.ClearInventorySlot(root, slot)` resets the slot's
+  `Attrs` to `xsi:nil="true"` and empties `Children`/`Text`, exposed via
+  `sdvedit_clearInventorySlot`. Each populated inventory row now shows a
+  "Clear" button. See `internal/save/accessor.go` and `site/app.js`
+  `loadInventory`.
+
+### Player: current HP / stamina are now editable
+
+- **Symptom:** the Player tab edited `maxHealth`/`maxStamina` only, not the
+  current `<health>`/`<stamina>` values people usually want to refill.
+- **Fix shipped:** `PlayerStats` gained `Health`/`Stamina`, read/written from
+  `player/health` and `player/stamina`; the Player tab surfaces "Current
+  Health" and "Current Stamina" fields. See `GetPlayerStats`/`SetPlayerStats`
+  and `loadPlayer`.
+
+### Friendships: pet type and gender are now editable
+
+- **Symptom:** `SetPet` updated name/friendship/timesPet/breed, but the JS
+  stripped `petType` and `gender`, leaving them read-only.
+- **Fix shipped:** `SetPet` now writes `petType` and `Gender`; the pet form
+  surfaces Type (Dog/Cat) and Gender (Male/Female) dropdowns that pass
+  through. See `SetPet` and `loadFriendships`.
+
+### Animals: can now be renamed
+
+- **Symptom:** the Animals row showed `name` as plain text even though
+  `SetAnimalField` already supported the `"name"` field.
+- **Fix shipped:** the name cell is now a text input and `name` is included in
+  the per-row apply patch. See `loadAnimals`.
+
 ---
 
 ## Open issues
 
-### Inventory: cannot clear an item back to empty
-
-`SetInventoryItem` only edits `stack`/`quality`; there is no inverse to
-`AddInventoryItem` that turns a populated `<Item>` back into
-`<Item xsi:nil="true"/>`. If the user accidentally fills the wrong slot,
-they can't undo it from the editor.
-
-**Fix sketch:** add `save.ClearInventorySlot(root, slot)` that resets `Attrs`
-to `xsi:nil="true"` and empties `Children`. Wire a small "Clear" button on
-each populated row.
-
 ### Inventory: cannot replace an item type
 
 Editing a slot only adjusts stack/quality. To change Stone → Iridium Ore the
-user has to clear-and-add, which isn't possible today (see above).
+user now has to clear the slot (see Fixed above) and re-add it, rather than
+swapping the type in place.
 
 **Fix sketch:** broaden `SetInventoryItem` (or add a sibling) to optionally
 take a new `itemId`/`name` and re-emit child nodes from `lookupItemDef`.

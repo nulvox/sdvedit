@@ -14,7 +14,9 @@ type PlayerStats struct {
 	FarmName         string `json:"farmName"`
 	Gender           string `json:"gender"`
 	Money            int    `json:"money"`
+	Health           int    `json:"health"`
 	MaxHealth        int    `json:"maxHealth"`
+	Stamina          int    `json:"stamina"`
 	MaxStamina       int    `json:"maxStamina"`
 	DeepestMineLevel int    `json:"deepestMineLevel"`
 	// ExperiencePoints: [Farming, Fishing, Foraging, Mining, Combat, Luck]
@@ -33,7 +35,9 @@ func GetPlayerStats(root *Node) (PlayerStats, error) {
 		FarmName:         textOf(root, "player/farmName"),
 		Gender:           textOf(p, "Gender"),
 		Money:            intOf(p, "money"),
+		Health:           intOf(p, "health"),
 		MaxHealth:        intOf(p, "maxHealth"),
+		Stamina:          intOf(p, "stamina"),
 		MaxStamina:       intOf(p, "maxStamina"),
 		DeepestMineLevel: intOf(p, "deepestMineLevel"),
 	}
@@ -60,7 +64,9 @@ func SetPlayerStats(root *Node, s PlayerStats) error {
 	setLeaf(p, "farmName", s.FarmName)
 	setLeaf(p, "Gender", s.Gender)
 	setLeaf(p, "money", strconv.Itoa(s.Money))
+	setLeaf(p, "health", strconv.Itoa(s.Health))
 	setLeaf(p, "maxHealth", strconv.Itoa(s.MaxHealth))
+	setLeaf(p, "stamina", strconv.Itoa(s.Stamina))
 	setLeaf(p, "maxStamina", strconv.Itoa(s.MaxStamina))
 	setLeaf(p, "deepestMineLevel", strconv.Itoa(s.DeepestMineLevel))
 	expNode := p.Child("experiencePoints")
@@ -447,6 +453,8 @@ func SetPet(root *Node, e PetEntry) error {
 				continue
 			}
 			setLeaf(npc, "name", e.Name)
+			setLeaf(npc, "petType", e.PetType)
+			setLeaf(npc, "Gender", e.Gender)
 			setLeaf(npc, "friendshipTowardFarmer", strconv.Itoa(e.Friendship))
 			setLeaf(npc, "timesPet", strconv.Itoa(e.TimesPet))
 			setLeaf(npc, "whichBreed", strconv.Itoa(e.Breed))
@@ -641,6 +649,31 @@ func SetInventoryItem(root *Node, slot int, stack, quality int) error {
 	}
 	setLeaf(item, "stack", strconv.Itoa(stack))
 	setLeaf(item, "quality", strconv.Itoa(quality))
+	return nil
+}
+
+// ClearInventorySlot resets a populated slot back to an empty
+// <Item xsi:nil="true"/> node, the inverse of AddInventoryItem. Returns an
+// error if the slot is out of range or already empty.
+func ClearInventorySlot(root *Node, slot int) error {
+	items := root.Get("player/items")
+	if items == nil {
+		return fmt.Errorf("items not found")
+	}
+	children := items.ChildrenNamed("Item")
+	if slot < 0 || slot >= len(children) {
+		return fmt.Errorf("slot %d out of range", slot)
+	}
+	item := children[slot]
+	if item.Attr("nil") == "true" {
+		return fmt.Errorf("slot %d is already empty", slot)
+	}
+	item.Attrs = []xml.Attr{{
+		Name:  xml.Name{Space: "http://www.w3.org/2001/XMLSchema-instance", Local: "nil"},
+		Value: "true",
+	}}
+	item.Children = nil
+	item.Text = ""
 	return nil
 }
 

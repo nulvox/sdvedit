@@ -92,7 +92,9 @@ function loadPlayer() {
       ${field('Farm Name', 'p-farmName', p.farmName)}
       ${selectField('Gender', 'p-gender', p.gender, ['Male', 'Female', 'Undefined'])}
       ${numField('Money (G)', 'p-money', p.money, 0, 9999999)}
+      ${numField('Current Health', 'p-health', p.health, 0, 200)}
       ${numField('Max Health', 'p-maxHealth', p.maxHealth, 20, 200)}
+      ${numField('Current Stamina', 'p-stamina', p.stamina, 0, 508)}
       ${numField('Max Stamina', 'p-maxStamina', p.maxStamina, 270, 508)}
       ${numField('Deepest Mine Level', 'p-mineLevel', p.deepestMineLevel, 0, 120)}
     </div>
@@ -106,7 +108,9 @@ function loadPlayer() {
       farmName: val('p-farmName'),
       gender: val('p-gender'),
       money: num('p-money'),
+      health: num('p-health'),
       maxHealth: num('p-maxHealth'),
+      stamina: num('p-stamina'),
       maxStamina: num('p-maxStamina'),
       deepestMineLevel: num('p-mineLevel'),
       experiencePoints: p.experiencePoints,
@@ -188,6 +192,8 @@ function loadFriendships() {
       <h3>Pet: ${esc(pet.name)} (${esc(pet.petType)})</h3>
       <div class="grid">
         ${field('Name', 'pet-name', pet.name)}
+        ${selectField('Type', 'pet-type', pet.petType, ['Dog', 'Cat'])}
+        ${selectField('Gender', 'pet-gender', pet.gender, ['Male', 'Female'])}
         ${numField('Friendship (0–1000)', 'pet-fr', pet.friendship, 0, 1000)}
         ${numField('Times Pet', 'pet-tp', pet.timesPet, 0, 9999)}
         ${numField('Breed (skin)', 'pet-breed', pet.breed, 0, 10)}
@@ -250,11 +256,11 @@ function loadFriendships() {
     document.getElementById('pet-save-btn').addEventListener('click', () => {
       const updated = {
         name: val('pet-name'),
-        petType: pet.petType,
+        petType: val('pet-type'),
         breed: num('pet-breed'),
         friendship: num('pet-fr'),
         timesPet: num('pet-tp'),
-        gender: pet.gender,
+        gender: val('pet-gender'),
       };
       call(sdvedit_setPet, JSON.stringify(updated));
       markDirty();
@@ -302,7 +308,7 @@ function loadAnimals() {
 
   const rows = animals.map((a, i) => `
     <tr>
-      <td>${esc(a.name)}</td>
+      <td>${field('', 'an-nm-' + i, a.name)}</td>
       <td>${esc(a.type)}</td>
       <td>${esc(buildMap[a.buildingId] || a.buildingId)}</td>
       <td>${numField('', 'an-fr-' + i, a.friendship, 0, 1000)}</td>
@@ -345,13 +351,15 @@ function loadAnimals() {
       btn.addEventListener('click', () => {
         const i = parseInt(btn.dataset.idx, 10);
         const a = animals[i];
+        const newName = val('an-nm-' + i).trim() || a.name;
+        call(sdvedit_setAnimalField, a.id, 'name', newName);
         call(sdvedit_setAnimalField, a.id, 'friendshipTowardFarmer', String(num('an-fr-' + i)));
         call(sdvedit_setAnimalField, a.id, 'happiness', String(num('an-hp-' + i)));
         call(sdvedit_setAnimalField, a.id, 'fullness', String(num('an-fl-' + i)));
         call(sdvedit_setAnimalField, a.id, 'age', String(num('an-ag-' + i)));
         call(sdvedit_setAnimalField, a.id, 'produceQuality', String(num('an-pq-' + i)));
         markDirty();
-        showToast(a.name + ' saved');
+        showToast(newName + ' saved');
       });
     });
   }
@@ -582,6 +590,7 @@ function loadInventory() {
       <td>${numField('', 'inv-qlt-' + i, item.quality, 0, 4)}</td>
       <td>
         <button class="btn-sm inv-apply-btn" data-idx="${i}">Apply</button>
+        <button class="btn-sm inv-clear-btn" data-idx="${i}">Clear</button>
       </td>
     </tr>`;
   }).join('');
@@ -603,6 +612,20 @@ function loadInventory() {
       call(sdvedit_setInventoryItem, i, num('inv-stk-' + i), num('inv-qlt-' + i));
       markDirty();
       showToast('Slot ' + i + ' saved');
+    });
+  });
+
+  document.querySelectorAll('.inv-clear-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const i = parseInt(btn.dataset.idx, 10);
+      try {
+        call(sdvedit_clearInventorySlot, i);
+        markDirty();
+        showToast('Slot ' + i + ' cleared');
+        loadInventory();
+      } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+      }
     });
   });
 

@@ -138,6 +138,123 @@ func TestSetFriendships_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestAddFriendship_AppendsNewNPC(t *testing.T) {
+	root, _ := Parse(strings.NewReader(friendshipFixture))
+
+	if err := AddFriendship(root, "Abigail"); err != nil {
+		t.Fatalf("AddFriendship: %v", err)
+	}
+
+	entries := GetFriendships(root)
+	if len(entries) != 3 {
+		t.Fatalf("len = %d, want 3", len(entries))
+	}
+	var abby *FriendshipEntry
+	for i := range entries {
+		if entries[i].NPC == "Abigail" {
+			abby = &entries[i]
+		}
+	}
+	if abby == nil {
+		t.Fatal("Abigail not present after AddFriendship")
+	}
+	if abby.Points != 0 {
+		t.Errorf("new NPC Points = %d, want 0", abby.Points)
+	}
+}
+
+func TestAddFriendship_IdempotentPreservesExisting(t *testing.T) {
+	root, _ := Parse(strings.NewReader(friendshipFixture))
+
+	if err := AddFriendship(root, "Lewis"); err != nil {
+		t.Fatalf("AddFriendship: %v", err)
+	}
+
+	entries := GetFriendships(root)
+	count := 0
+	for _, e := range entries {
+		if e.NPC == "Lewis" {
+			count++
+			if e.Points != 16 {
+				t.Errorf("existing Lewis Points = %d, want 16 (untouched)", e.Points)
+			}
+		}
+	}
+	if count != 1 {
+		t.Errorf("Lewis appears %d times, want 1 (no duplicate)", count)
+	}
+}
+
+func TestAddFriendship_ThenSetRoundTrip(t *testing.T) {
+	root, _ := Parse(strings.NewReader(friendshipFixture))
+	if err := AddFriendship(root, "Abigail"); err != nil {
+		t.Fatal(err)
+	}
+
+	entries := GetFriendships(root)
+	for i := range entries {
+		if entries[i].NPC == "Abigail" {
+			entries[i].Points = 2500
+			entries[i].Status = "Dating"
+		}
+	}
+	SetFriendships(root, entries)
+
+	for _, e := range GetFriendships(root) {
+		if e.NPC == "Abigail" {
+			if e.Points != 2500 {
+				t.Errorf("Abigail Points = %d after set, want 2500", e.Points)
+			}
+			if e.Status != "Dating" {
+				t.Errorf("Abigail Status = %q after set, want Dating", e.Status)
+			}
+		}
+	}
+}
+
+func TestAddFriendship_RoundTripsThroughXML(t *testing.T) {
+	root, _ := Parse(strings.NewReader(friendshipFixture))
+	if err := AddFriendship(root, "Sebastian"); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := Serialize(root, &buf); err != nil {
+		t.Fatal(err)
+	}
+	root2, err := Parse(strings.NewReader(buf.String()))
+	if err != nil {
+		t.Fatalf("re-parse: %v", err)
+	}
+	found := false
+	for _, e := range GetFriendships(root2) {
+		if e.NPC == "Sebastian" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("Sebastian not durable through round-trip")
+	}
+}
+
+func TestKnownNPCs_NonEmpty(t *testing.T) {
+	npcs := KnownNPCs()
+	if len(npcs) == 0 {
+		t.Fatal("KnownNPCs returned empty list")
+	}
+	// a few canonical villagers must be present
+	want := map[string]bool{"Abigail": false, "Sebastian": false, "Lewis": false}
+	for _, n := range npcs {
+		if _, ok := want[n]; ok {
+			want[n] = true
+		}
+	}
+	for n, present := range want {
+		if !present {
+			t.Errorf("expected %q in KnownNPCs", n)
+		}
+	}
+}
+
 func TestGetWorldState_Fixture(t *testing.T) {
 	root, _ := Parse(strings.NewReader(friendshipFixture))
 	ws := GetWorldState(root)
@@ -382,6 +499,89 @@ func TestSetPet_TypeAndGender_RoundTrip(t *testing.T) {
 	}
 	if got.Gender != "Female" {
 		t.Errorf("Gender = %q, want Female", got.Gender)
+	}
+}
+
+const noPetFixture = `<?xml version="1.0" encoding="utf-8"?>
+<SaveGame xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <locations>
+    <GameLocation xsi:type="Farm">
+      <characters/>
+    </GameLocation>
+  </locations>
+</SaveGame>`
+
+func TestAddPet_CreatesPetWhenNoneExists(t *testing.T) {
+	root, _ := Parse(strings.NewReader(noPetFixture))
+	if GetPet(root) != nil {
+		t.Fatal("fixture should start with no pet")
+	}
+
+	if err := AddPet(root, "Cat", "Whiskers", 1); err != nil {
+		t.Fatalf("AddPet: %v", err)
+	}
+
+	pet := GetPet(root)
+	if pet == nil {
+		t.Fatal("no pet after AddPet")
+	}
+	if pet.Name != "Whiskers" {
+		t.Errorf("Name = %q, want Whiskers", pet.Name)
+	}
+	if pet.PetType != "Cat" {
+		t.Errorf("PetType = %q, want Cat", pet.PetType)
+	}
+	if pet.Breed != 1 {
+		t.Errorf("Breed = %d, want 1", pet.Breed)
+	}
+}
+
+func TestAddPet_RefusesDuplicate(t *testing.T) {
+	root, _ := Parse(strings.NewReader(petFixture)) // already has Rex
+	if err := AddPet(root, "Dog", "Spot", 0); err == nil {
+		t.Fatal("expected error adding a second pet")
+	}
+	if GetPet(root).Name != "Rex" {
+		t.Error("existing pet disturbed by duplicate AddPet")
+	}
+}
+
+func TestAddPet_RoundTripsThroughXML(t *testing.T) {
+	root, _ := Parse(strings.NewReader(noPetFixture))
+	if err := AddPet(root, "Dog", "Rover", 2); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := Serialize(root, &buf); err != nil {
+		t.Fatal(err)
+	}
+	root2, err := Parse(strings.NewReader(buf.String()))
+	if err != nil {
+		t.Fatalf("re-parse: %v", err)
+	}
+	pet := GetPet(root2)
+	if pet == nil || pet.Name != "Rover" || pet.PetType != "Dog" || pet.Breed != 2 {
+		t.Errorf("pet not durable through round-trip: %+v", pet)
+	}
+}
+
+func TestAddPet_ThenSetRoundTrip(t *testing.T) {
+	root, _ := Parse(strings.NewReader(noPetFixture))
+	if err := AddPet(root, "Cat", "Whiskers", 0); err != nil {
+		t.Fatal(err)
+	}
+	pet := GetPet(root)
+	pet.Friendship = 750
+	pet.TimesPet = 30
+	if err := SetPet(root, *pet); err != nil {
+		t.Fatalf("SetPet on added pet: %v", err)
+	}
+	got := GetPet(root)
+	if got.Friendship != 750 {
+		t.Errorf("Friendship = %d after set, want 750", got.Friendship)
+	}
+	if got.TimesPet != 30 {
+		t.Errorf("TimesPet = %d after set, want 30", got.TimesPet)
 	}
 }
 

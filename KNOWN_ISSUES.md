@@ -87,6 +87,55 @@ sketch of the **fix** so anyone picking it up has a starting point.
   per pet type, rebuilt when the Type dropdown changes. See `petBreedField` /
   `loadFriendships`.
 
+### Animals: can now be deleted
+
+- **Symptom:** `AddAnimal`/`SetAnimalField` existed but there was no inverse,
+  so a typo'd or replaced animal couldn't be removed.
+- **Fix shipped:** `save.RemoveAnimal(root, animalID)` drops the matching
+  `<item>` from its building's `SerializableDictionaryOfInt64FarmAnimal`,
+  exposed via `sdvedit_removeAnimal`. Each animal row now has a "Delete"
+  button (with a confirm). See `animal_factory.go` and `loadAnimals`.
+
+### Animals: can now be moved between buildings
+
+- **Symptom:** no way to reassign an animal to a different barn/coop after a
+  new building was added.
+- **Fix shipped:** `save.MoveAnimal(root, animalID, targetBuildingID)` splices
+  the `<item>` out of the source dictionary into the target's, validating that
+  the target's habitat (coop vs barn) matches the animal and updating
+  `buildingTypeILiveIn`. Exposed via `sdvedit_moveAnimal`; each row shows a
+  habitat-filtered target picker and a "Move" button. See `MoveAnimal` and
+  `loadAnimals`.
+
+### Buildings: can now be deleted
+
+- **Symptom:** `AddBuilding` existed with no inverse, so a misplaced building
+  was stuck.
+- **Fix shipped:** `save.RemoveBuilding(root, buildingID)` drops the matching
+  `<Building>` from `farm/buildings`, refusing (with no mutation) if the
+  building still houses animals. Exposed via `sdvedit_removeBuilding`; each
+  building card has a "Delete Building" button. See `building_factory.go` and
+  `loadBuildings`.
+
+### Friendships: can now add a missing NPC
+
+- **Symptom:** `SetFriendships` silently skipped NPCs the player hadn't met,
+  and there was no way to create the `<item>` under `friendshipData`.
+- **Fix shipped:** `save.AddFriendship(root, npcName)` appends a fresh
+  default-zero `<Friendship>` entry (idempotent), backed by a vanilla villager
+  list (`npc_catalog.go` / `KnownNPCs`). Exposed via `sdvedit_addFriendship` /
+  `sdvedit_knownNPCs`; the Friendships tab has an "Add NPC" picker of villagers
+  not yet present. See `accessor.go` and `loadFriendships`.
+
+### Friendships: can now add a pet when none exists
+
+- **Symptom:** `loadFriendships` only rendered the pet section when a pet was
+  present; new-game/pet-less saves never saw the form.
+- **Fix shipped:** `save.AddPet(root, petType, name, breed)` builds an
+  `<NPC xsi:type="Pet">` under `farm/characters` (refusing if one already
+  exists), exposed via `sdvedit_addPet`. When no pet is present the tab now
+  shows an "Add Pet" form. See `AddPet`/`buildPetNode` and `loadFriendships`.
+
 ---
 
 ## Open issues
@@ -101,77 +150,6 @@ though all the data is present in the parsed tree.
 **Fix sketch:** new accessors `GetEquipment`/`SetEquipment` reading those
 top-level slots; new section under the Inventory tab.
 
-### Friendships: cannot add a missing NPC
-
-`SetFriendships` loops `idx[e.NPC]` and silently skips unknown NPCs
-(`accessor.go` `SetFriendships`). If the player hasn't met an NPC yet, the
-NPC simply doesn't appear in the list — and the editor has no way to create
-the `<item>` under `friendshipData`.
-
-**Fix sketch:** new `save.AddFriendship(root, npcName)` that appends a fresh
-`<item><key><string>NPC</string></key><value><Friendship>…</Friendship></value></item>`
-with default-zero fields, plus a hard-coded list of vanilla NPC names for the
-add UI.
-
-### Friendships: cannot add a pet when none exists
-
-`loadFriendships` only renders the pet section when `getJSON(sdvedit_getPet)`
-is truthy. New-game saves and farms without a pet never see the form. There
-is no `AddPet` accessor.
-
-**Fix sketch:** add `save.AddPet(root, petType, name, breed)` that builds the
-required `<NPC xsi:type="Pet">` node under `farm/characters`. Guard against
-duplicates by checking for an existing Pet NPC first.
-
-### Friendships: pet type and gender are not editable
-
-`SetPet` updates name, friendship, timesPet, breed — but the JS strips
-`petType` and `gender` from the payload (`app.js` ~line 254 keeps them as
-read-only).
-
-**Fix sketch:** add fields to the UI and pass them through. `SetPet` already
-ignores them, so the Go side also needs `setLeaf(npc, "petType", …)` and
-`setLeaf(npc, "Gender", …)`.
-
-### Animals: cannot delete an animal
-
-`AddAnimal` and `SetAnimalField` exist; there is no `RemoveAnimal`. The
-Animals tab has no delete control. Useful for cleaning up a typo'd add or
-removing an animal that's been replaced in-game already.
-
-**Fix sketch:** `save.RemoveAnimal(root, animalID)` that walks each
-building's `Animals/SerializableDictionaryOfInt64FarmAnimal` and drops the
-matching `<item>` from `Children`.
-
-### Animals: cannot rename an animal
-
-The Animals row shows `name` as plain text. `SetAnimalField` already supports
-arbitrary field names (including `"name"`), so this is purely a missing UI
-control.
-
-**Fix sketch:** swap the `<td>${esc(a.name)}</td>` for a text input and add
-`name` to the patch list in the per-row apply handler.
-
-### Animals: cannot move an animal between buildings
-
-There's no way to reassign an animal to a different barn/coop, which matters
-when the user adds a new building and wants to migrate occupants.
-
-**Fix sketch:** `save.MoveAnimal(root, animalID, targetBuildingID)`: locate
-the source `<item>` under its current building, splice it out of that
-dictionary, append into the target's dictionary. Validate that the target
-building type matches `def.IsCoopDweller`.
-
-### Buildings: cannot delete a building
-
-`AddBuilding` exists, no `RemoveBuilding`. Misplaced or unwanted buildings
-can be edited (position, paint) but not removed. Deleting through this tool
-would let users undo a bad placement without re-loading their save.
-
-**Fix sketch:** `save.RemoveBuilding(root, buildingID)` that drops the
-matching `<Building>` from `farm/buildings/Children`. Refuse if the building
-still has occupants, or surface a warning.
-
 ### Buildings: cannot change building type
 
 Edit form covers tile position and paint but not type. Changing type
@@ -182,27 +160,6 @@ consistent.
 **Fix sketch:** add a type dropdown; on apply, re-derive the def-driven
 fields from `buildingDefs`. Probably gate behind a "recompute structural
 fields" checkbox so users who hand-tuned values aren't surprised.
-
-### Recipes: "Learn All" only updates already-known recipes
-
-`getRecipes` iterates `<item>` children of `player/cookingRecipes` /
-`player/craftingRecipes` — only recipes the player has already learned. The
-"Learn All (set 1)" button does not actually unlock new recipes; it just
-sets `timesMade=1` on the ones already present.
-
-**Fix sketch:** maintain a vanilla recipe whitelist (cooking + crafting), and
-add `save.AddRecipe(root, section, recipeName)` that appends a new `<item>`
-with `value/int=0`. The Learn-All button can then iterate the full list.
-Mirror logic for an "unlearn" / remove control if desired.
-
-### Player: cannot edit current HP / current stamina
-
-The Player tab edits `maxHealth` and `maxStamina` only. The save also has
-the current `<health>` and `<stamina>` values, which is what people usually
-want to refill mid-day.
-
-**Fix sketch:** extend `PlayerStats` with `Health`/`Stamina`, read/write
-`player/health` and `player/stamina`, surface two extra number fields.
 
 ### Quests and Bundles tabs are intentionally read-only
 

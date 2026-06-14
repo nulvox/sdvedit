@@ -34,9 +34,15 @@ func main() {
 	g.Set("sdvedit_getAnimals", js.FuncOf(jsGetAnimals))
 	g.Set("sdvedit_setAnimalField", js.FuncOf(jsSetAnimalField))
 	g.Set("sdvedit_addAnimal", js.FuncOf(jsAddAnimal))
+	g.Set("sdvedit_removeAnimal", js.FuncOf(jsRemoveAnimal))
+	g.Set("sdvedit_moveAnimal", js.FuncOf(jsMoveAnimal))
 	g.Set("sdvedit_animalTypes", js.FuncOf(jsAnimalTypes))
+	g.Set("sdvedit_removeBuilding", js.FuncOf(jsRemoveBuilding))
+	g.Set("sdvedit_addFriendship", js.FuncOf(jsAddFriendship))
+	g.Set("sdvedit_knownNPCs", js.FuncOf(jsKnownNPCs))
 	g.Set("sdvedit_getPet", js.FuncOf(jsGetPet))
 	g.Set("sdvedit_setPet", js.FuncOf(jsSetPet))
+	g.Set("sdvedit_addPet", js.FuncOf(jsAddPet))
 	g.Set("sdvedit_getInventory", js.FuncOf(jsGetInventory))
 	g.Set("sdvedit_setInventoryItem", js.FuncOf(jsSetInventoryItem))
 	g.Set("sdvedit_addInventoryItem", js.FuncOf(jsAddInventoryItem))
@@ -256,6 +262,75 @@ func jsSetAnimalField(_ js.Value, args []js.Value) any {
 	}
 	err := save.SetAnimalField(state.root, args[0].String(), args[1].String(), args[2].String())
 	if err != nil {
+		return errResult(err.Error())
+	}
+	return okResult(nil)
+}
+
+func jsRemoveAnimal(_ js.Value, args []js.Value) any {
+	if state.root == nil {
+		return errResult("no save loaded")
+	}
+	if len(args) < 1 {
+		return errResult("expected (animalId)")
+	}
+	if err := save.RemoveAnimal(state.root, args[0].String()); err != nil {
+		return errResult(err.Error())
+	}
+	return okResult(nil)
+}
+
+func jsMoveAnimal(_ js.Value, args []js.Value) any {
+	if state.root == nil {
+		return errResult("no save loaded")
+	}
+	if len(args) < 2 {
+		return errResult("expected (animalId, targetBuildingId)")
+	}
+	if err := save.MoveAnimal(state.root, args[0].String(), args[1].String()); err != nil {
+		return errResult(err.Error())
+	}
+	return okResult(nil)
+}
+
+func jsRemoveBuilding(_ js.Value, args []js.Value) any {
+	if state.root == nil {
+		return errResult("no save loaded")
+	}
+	if len(args) < 1 {
+		return errResult("expected (buildingId)")
+	}
+	if err := save.RemoveBuilding(state.root, args[0].String()); err != nil {
+		return errResult(err.Error())
+	}
+	return okResult(nil)
+}
+
+func jsAddFriendship(_ js.Value, args []js.Value) any {
+	if state.root == nil {
+		return errResult("no save loaded")
+	}
+	if len(args) < 1 {
+		return errResult("expected (npcName)")
+	}
+	if err := save.AddFriendship(state.root, args[0].String()); err != nil {
+		return errResult(err.Error())
+	}
+	return okResult(nil)
+}
+
+func jsKnownNPCs(_ js.Value, _ []js.Value) any {
+	return jsonResult(save.KnownNPCs())
+}
+
+func jsAddPet(_ js.Value, args []js.Value) any {
+	if state.root == nil {
+		return errResult("no save loaded")
+	}
+	if len(args) < 3 {
+		return errResult("expected (petType, name, breed)")
+	}
+	if err := save.AddPet(state.root, args[0].String(), args[1].String(), args[2].Int()); err != nil {
 		return errResult(err.Error())
 	}
 	return okResult(nil)

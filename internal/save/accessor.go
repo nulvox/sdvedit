@@ -151,6 +151,36 @@ func SetFriendships(root *Node, entries []FriendshipEntry) {
 	}
 }
 
+// AddFriendship appends a fresh friendship entry for npcName under
+// player/friendshipData with default-zero values, mirroring the node shape the
+// game writes for a newly-met villager. The call is idempotent: if the NPC is
+// already listed, the existing entry is left untouched.
+func AddFriendship(root *Node, npcName string) error {
+	fd := root.Get("player/friendshipData")
+	if fd == nil {
+		return fmt.Errorf("friendshipData not found")
+	}
+	for _, item := range fd.ChildrenNamed("item") {
+		if key := item.Get("key/string"); key != nil && key.Text == npcName {
+			return nil // already known
+		}
+	}
+	fd.Children = append(fd.Children, &Node{Name: "item", Children: []*Node{
+		{Name: "key", Children: []*Node{{Name: "string", Text: npcName}}},
+		{Name: "value", Children: []*Node{{Name: "Friendship", Children: []*Node{
+			leaf("Points", "0"),
+			leaf("GiftsThisWeek", "0"),
+			leaf("GiftsToday", "0"),
+			leaf("TalkedToToday", "false"),
+			leaf("ProposalRejected", "false"),
+			leaf("Status", "Friendly"),
+			leaf("Proposer", "0"),
+			leaf("RoommateMarriage", "false"),
+		}}}},
+	}})
+	return nil
+}
+
 // --- World State ---
 
 type WorldState struct {
@@ -462,6 +492,98 @@ func SetPet(root *Node, e PetEntry) error {
 		}
 	}
 	return fmt.Errorf("pet not found")
+}
+
+// AddPet creates a new pet under the farm's characters when the save has none.
+// It refuses if a Pet NPC already exists, since the game supports a single pet.
+// petType is "Dog" or "Cat"; breed is the whichBreed skin index.
+func AddPet(root *Node, petType, name string, breed int) error {
+	farm := farmNode(root)
+	if farm == nil {
+		return fmt.Errorf("farm not found")
+	}
+	if GetPet(root) != nil {
+		return fmt.Errorf("a pet already exists")
+	}
+	chars := farm.Child("characters")
+	if chars == nil {
+		chars = &Node{Name: "characters"}
+		farm.Children = append(farm.Children, chars)
+	}
+	chars.Children = append(chars.Children, buildPetNode(petType, name, breed))
+	return nil
+}
+
+func buildPetNode(petType, name string, breed int) *Node {
+	nilAttr := []xml.Attr{{Name: xml.Name{Space: "http://www.w3.org/2001/XMLSchema-instance", Local: "nil"}, Value: "true"}}
+	boolWrap := func(v string) *Node { return &Node{Name: "boolean", Text: v} }
+	pos := func(name string, x, y string) *Node {
+		return &Node{Name: name, Children: []*Node{leaf("X", x), leaf("Y", y)}}
+	}
+	return &Node{
+		Name:  "NPC",
+		Attrs: []xml.Attr{{Name: xml.Name{Space: "http://www.w3.org/2001/XMLSchema-instance", Local: "type"}, Value: "Pet"}},
+		Children: []*Node{
+			leaf("name", name),
+			leaf("forceOneTileWide", "false"),
+			leaf("isEmoting", "false"),
+			leaf("isCharging", "false"),
+			leaf("isGlowing", "false"),
+			leaf("coloredBorder", "false"),
+			leaf("flip", "false"),
+			leaf("drawOnTop", "false"),
+			leaf("faceTowardFarmer", "false"),
+			leaf("ignoreMovementAnimation", "false"),
+			leaf("faceAwayFromFarmer", "false"),
+			{Name: "scale", Children: []*Node{{Name: "float", Text: "1"}}},
+			leaf("glowingTransparency", "0"),
+			leaf("glowRate", "0"),
+			leaf("Gender", "Male"),
+			leaf("willDestroyObjectsUnderfoot", "false"),
+			pos("Position", "0", "0"),
+			leaf("Speed", "2"),
+			leaf("FacingDirection", "2"),
+			leaf("IsEmoting", "false"),
+			leaf("CurrentEmote", "0"),
+			leaf("Scale", "1"),
+			leaf("daysAfterLastBirth", "-1"),
+			leaf("birthday_Day", "0"),
+			leaf("age", "0"),
+			leaf("manners", "0"),
+			leaf("socialAnxiety", "0"),
+			leaf("optimism", "0"),
+			leaf("gender", "Male"),
+			leaf("sleptInBed", "true"),
+			leaf("isInvisible", "false"),
+			leaf("lastSeenMovieWeek", "-1"),
+			{Name: "datingFarmer", Attrs: nilAttr},
+			{Name: "divorcedFromFarmer", Attrs: nilAttr},
+			leaf("datable", "false"),
+			leaf("id", "-1"),
+			leaf("daysUntilNotInvisible", "0"),
+			leaf("followSchedule", "true"),
+			leaf("moveTowardPlayerThreshold", "0"),
+			{Name: "hasBeenKissedToday", Children: []*Node{boolWrap("false")}},
+			{Name: "shouldPlayRobinHammerAnimation", Children: []*Node{boolWrap("false")}},
+			{Name: "shouldPlaySpousePatioAnimation", Children: []*Node{boolWrap("false")}},
+			{Name: "shouldWearIslandAttire", Children: []*Node{boolWrap("false")}},
+			{Name: "isMovingOnPathFindPath", Children: []*Node{boolWrap("false")}},
+			{Name: "endOfRouteBehaviorName", Children: []*Node{{Name: "string", Attrs: nilAttr}}},
+			pos("previousEndPoint", "0", "0"),
+			leaf("squareMovementFacingPreference", "0"),
+			leaf("DefaultFacingDirection", "2"),
+			pos("DefaultPosition", "0", "0"),
+			leaf("IsWalkingInSquare", "false"),
+			leaf("IsWalkingTowardPlayer", "false"),
+			leaf("guid", newUUID()),
+			leaf("petType", petType),
+			leaf("whichBreed", strconv.Itoa(breed)),
+			leaf("homeLocationName", "Farm"),
+			leaf("friendshipTowardFarmer", "0"),
+			leaf("timesPet", "0"),
+			leaf("CurrentBehavior", "0"),
+		},
+	}
 }
 
 // --- Recipes ---

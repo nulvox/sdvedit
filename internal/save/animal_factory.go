@@ -118,6 +118,127 @@ func AddAnimal(root *Node, buildingID, animalType, animalName string) error {
 	return nil
 }
 
+// RemoveAnimal deletes the FarmAnimal with the given int64 key from whichever
+// building dictionary holds it. Returns an error if no animal matches.
+func RemoveAnimal(root *Node, animalID string) error {
+	farm := farmNode(root)
+	if farm == nil {
+		return fmt.Errorf("farm not found")
+	}
+	bldgs := farm.Child("buildings")
+	if bldgs == nil {
+		return fmt.Errorf("buildings not found")
+	}
+	for _, b := range bldgs.ChildrenNamed("Building") {
+		dict := animalDict(b)
+		if dict == nil {
+			continue
+		}
+		for i, item := range dict.Children {
+			if item.Name != "item" {
+				continue
+			}
+			key := item.Get("key/long")
+			if key != nil && key.Text == animalID {
+				dict.Children = append(dict.Children[:i], dict.Children[i+1:]...)
+				return nil
+			}
+		}
+	}
+	return fmt.Errorf("animal %q not found", animalID)
+}
+
+// MoveAnimal relocates the animal with the given int64 key to targetBuildingID,
+// splicing its <item> out of the source dictionary and appending it to the
+// target's. The target must be a barn/coop matching the animal's habitat;
+// otherwise the animal is left untouched and an error is returned.
+func MoveAnimal(root *Node, animalID, targetBuildingID string) error {
+	farm := farmNode(root)
+	if farm == nil {
+		return fmt.Errorf("farm not found")
+	}
+	bldgs := farm.Child("buildings")
+	if bldgs == nil {
+		return fmt.Errorf("buildings not found")
+	}
+
+	// resolve target building and its dictionary first, so we don't mutate the
+	// source on a doomed move.
+	var target *Node
+	for _, b := range bldgs.ChildrenNamed("Building") {
+		if textOf(b, "id") == targetBuildingID {
+			target = b
+			break
+		}
+	}
+	if target == nil {
+		return fmt.Errorf("target building %q not found", targetBuildingID)
+	}
+	targetType := textOf(target, "buildingType")
+
+	// locate the source item and the animal's type.
+	var srcDict, item *Node
+	srcIdx := -1
+	for _, b := range bldgs.ChildrenNamed("Building") {
+		dict := animalDict(b)
+		if dict == nil {
+			continue
+		}
+		for i, it := range dict.Children {
+			if it.Name != "item" {
+				continue
+			}
+			if key := it.Get("key/long"); key != nil && key.Text == animalID {
+				srcDict, item, srcIdx = dict, it, i
+				break
+			}
+		}
+		if item != nil {
+			break
+		}
+	}
+	if item == nil {
+		return fmt.Errorf("animal %q not found", animalID)
+	}
+
+	animalType := textOf(item, "value/FarmAnimal/type")
+	def, ok := animalDefs[animalType]
+	if !ok {
+		return fmt.Errorf("unknown animal type %q", animalType)
+	}
+	if def.IsCoopDweller && !coopTypes[targetType] {
+		return fmt.Errorf("%s is a coop animal but target is %q", animalType, targetType)
+	}
+	if !def.IsCoopDweller && !barnTypes[targetType] {
+		return fmt.Errorf("%s is a barn animal but target is %q", animalType, targetType)
+	}
+
+	targetDict := animalDict(target)
+	if targetDict == nil {
+		return fmt.Errorf("target building %q has no animal storage", targetBuildingID)
+	}
+
+	srcDict.Children = append(srcDict.Children[:srcIdx], srcDict.Children[srcIdx+1:]...)
+	targetDict.Children = append(targetDict.Children, item)
+	// keep the animal's record of which building type it lives in consistent.
+	setLeaf(item, "value/FarmAnimal/buildingTypeILiveIn", targetType)
+	return nil
+}
+
+// animalDict returns the SerializableDictionaryOfInt64FarmAnimal node for a
+// building, or nil if the building has no indoors animal storage.
+func animalDict(b *Node) *Node {
+	indoors := b.Child("indoors")
+	if indoors == nil {
+		return nil
+	}
+	animals := indoors.Child("Animals")
+	if animals == nil {
+		return nil
+	}
+	return animals.Child("SerializableDictionaryOfInt64FarmAnimal")
+}
+
 // buildAnimalItem constructs the <item> node for one FarmAnimal entry.
 func buildAnimalItem(id, name, animalType, buildingType, ownerID string, def AnimalDef) *Node {
 	isCoopStr := strconv.FormatBool(def.IsCoopDweller)

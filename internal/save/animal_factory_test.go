@@ -232,3 +232,97 @@ func TestAddAnimal_RealSave(t *testing.T) {
 		t.Errorf("animals: before=%d after=%d expected=%d", before, len(after), expected)
 	}
 }
+
+func TestRemoveAnimal_DropsMatchingAnimal(t *testing.T) {
+	root, _ := Parse(strings.NewReader(barnFixture))
+	if err := AddAnimal(root, "barn-building-id", "Cow", "Bessie"); err != nil {
+		t.Fatal(err)
+	}
+	if err := AddAnimal(root, "barn-building-id", "Cow", "Daisy"); err != nil {
+		t.Fatal(err)
+	}
+	var bessieID string
+	for _, a := range GetAnimals(root) {
+		if a.Name == "Bessie" {
+			bessieID = a.ID
+		}
+	}
+
+	if err := RemoveAnimal(root, bessieID); err != nil {
+		t.Fatalf("RemoveAnimal: %v", err)
+	}
+
+	animals := GetAnimals(root)
+	if len(animals) != 1 {
+		t.Fatalf("expected 1 animal after remove, got %d", len(animals))
+	}
+	if animals[0].Name != "Daisy" {
+		t.Errorf("surviving animal = %q, want Daisy", animals[0].Name)
+	}
+}
+
+func TestRemoveAnimal_UnknownID(t *testing.T) {
+	root, _ := Parse(strings.NewReader(barnFixture))
+	if err := RemoveAnimal(root, "no-such-animal"); err == nil {
+		t.Fatal("expected error removing unknown animal")
+	}
+}
+
+// newBarnID adds a Big Barn and returns its generated ID.
+func newBarnID(t *testing.T, root *Node) string {
+	t.Helper()
+	if err := AddBuilding(root, "Big Barn", 30, 30); err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range GetBuildings(root) {
+		if b.BuildingType == "Big Barn" {
+			return b.ID
+		}
+	}
+	t.Fatal("Big Barn not found after AddBuilding")
+	return ""
+}
+
+func TestMoveAnimal_RelocatesToTargetBuilding(t *testing.T) {
+	root, _ := Parse(strings.NewReader(barnFixture))
+	if err := AddAnimal(root, "barn-building-id", "Cow", "Bessie"); err != nil {
+		t.Fatal(err)
+	}
+	id := GetAnimals(root)[0].ID
+	target := newBarnID(t, root)
+
+	if err := MoveAnimal(root, id, target); err != nil {
+		t.Fatalf("MoveAnimal: %v", err)
+	}
+
+	animals := GetAnimals(root)
+	if len(animals) != 1 {
+		t.Fatalf("expected 1 animal after move, got %d", len(animals))
+	}
+	if animals[0].BuildingID != target {
+		t.Errorf("animal building = %q, want %q", animals[0].BuildingID, target)
+	}
+}
+
+func TestMoveAnimal_RejectsIncompatibleBuilding(t *testing.T) {
+	root, _ := Parse(strings.NewReader(barnFixture))
+	if err := AddAnimal(root, "barn-building-id", "Cow", "Bessie"); err != nil {
+		t.Fatal(err)
+	}
+	id := GetAnimals(root)[0].ID
+
+	// Cow into a Coop must fail, and the animal must stay put.
+	if err := MoveAnimal(root, id, "coop-building-id"); err == nil {
+		t.Fatal("expected error moving barn animal into a coop")
+	}
+	if GetAnimals(root)[0].BuildingID != "barn-building-id" {
+		t.Error("animal moved despite incompatible target")
+	}
+}
+
+func TestMoveAnimal_UnknownAnimal(t *testing.T) {
+	root, _ := Parse(strings.NewReader(barnFixture))
+	if err := MoveAnimal(root, "nope", "barn-building-id"); err == nil {
+		t.Fatal("expected error moving unknown animal")
+	}
+}

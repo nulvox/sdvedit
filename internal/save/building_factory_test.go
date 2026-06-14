@@ -202,3 +202,99 @@ func TestRemoveBuilding_UnknownID(t *testing.T) {
 		t.Fatal("expected error removing unknown building")
 	}
 }
+
+func TestChangeBuildingType_RecomputesStructuralFields(t *testing.T) {
+	root, _ := Parse(strings.NewReader(emptyFarmFixture))
+	if err := AddBuilding(root, "Barn", 10, 10); err != nil {
+		t.Fatal(err)
+	}
+	id := GetBuildings(root)[0].ID
+
+	if err := ChangeBuildingType(root, id, "Big Barn", true); err != nil {
+		t.Fatalf("ChangeBuildingType: %v", err)
+	}
+
+	b := GetBuildings(root)[0]
+	if b.BuildingType != "Big Barn" {
+		t.Errorf("BuildingType = %q, want Big Barn", b.BuildingType)
+	}
+	if b.MaxOccupants != 8 {
+		t.Errorf("MaxOccupants = %d, want 8 (recomputed for Big Barn)", b.MaxOccupants)
+	}
+	if b.HayCapacity != 240 {
+		t.Errorf("HayCapacity = %d, want 240", b.HayCapacity)
+	}
+}
+
+func TestChangeBuildingType_WithoutRecomputePreservesFields(t *testing.T) {
+	root, _ := Parse(strings.NewReader(emptyFarmFixture))
+	AddBuilding(root, "Barn", 10, 10)
+	id := GetBuildings(root)[0].ID
+	// hand-tune a structural value
+	SetBuildingField(root, id, "maxOccupants", "99")
+
+	if err := ChangeBuildingType(root, id, "Big Barn", false); err != nil {
+		t.Fatalf("ChangeBuildingType: %v", err)
+	}
+
+	b := GetBuildings(root)[0]
+	if b.BuildingType != "Big Barn" {
+		t.Errorf("BuildingType = %q, want Big Barn", b.BuildingType)
+	}
+	if b.MaxOccupants != 99 {
+		t.Errorf("MaxOccupants = %d, want 99 preserved (no recompute)", b.MaxOccupants)
+	}
+}
+
+func TestChangeBuildingType_UnknownType(t *testing.T) {
+	root, _ := Parse(strings.NewReader(emptyFarmFixture))
+	AddBuilding(root, "Barn", 10, 10)
+	id := GetBuildings(root)[0].ID
+	if err := ChangeBuildingType(root, id, "Castle", true); err == nil {
+		t.Fatal("expected error for unknown target type")
+	}
+}
+
+func TestChangeBuildingType_RefusesCrossHabitatWhenOccupied(t *testing.T) {
+	root, _ := Parse(strings.NewReader(emptyFarmFixture))
+	AddBuilding(root, "Barn", 10, 10)
+	id := GetBuildings(root)[0].ID
+	if err := AddAnimal(root, id, "Cow", "Bessie"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ChangeBuildingType(root, id, "Coop", true); err == nil {
+		t.Fatal("expected error switching an occupied barn to a coop")
+	}
+	if GetBuildings(root)[0].BuildingType != "Barn" {
+		t.Error("type changed despite refusal")
+	}
+}
+
+func TestChangeBuildingType_RefusesNonHousingWhenOccupied(t *testing.T) {
+	root, _ := Parse(strings.NewReader(emptyFarmFixture))
+	AddBuilding(root, "Barn", 10, 10)
+	id := GetBuildings(root)[0].ID
+	AddAnimal(root, id, "Cow", "Bessie")
+	if err := ChangeBuildingType(root, id, "Silo", true); err == nil {
+		t.Fatal("expected error switching an occupied barn to a silo")
+	}
+}
+
+func TestChangeBuildingType_SameHabitatWhenOccupiedUpdatesAnimals(t *testing.T) {
+	root, _ := Parse(strings.NewReader(emptyFarmFixture))
+	AddBuilding(root, "Barn", 10, 10)
+	id := GetBuildings(root)[0].ID
+	AddAnimal(root, id, "Cow", "Bessie")
+
+	if err := ChangeBuildingType(root, id, "Big Barn", true); err != nil {
+		t.Fatalf("ChangeBuildingType barn upgrade while occupied: %v", err)
+	}
+
+	farm := farmNode(root)
+	bldg := farm.Child("buildings").Child("Building")
+	dict := animalDict(bldg)
+	item := dict.ChildrenNamed("item")[0]
+	if got := textOf(item, "value/FarmAnimal/buildingTypeILiveIn"); got != "Big Barn" {
+		t.Errorf("buildingTypeILiveIn = %q, want Big Barn", got)
+	}
+}

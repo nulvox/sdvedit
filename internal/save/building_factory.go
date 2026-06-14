@@ -91,6 +91,73 @@ func RemoveBuilding(root *Node, buildingID string) error {
 	return fmt.Errorf("building %q not found", buildingID)
 }
 
+// ChangeBuildingType switches an existing building to newType. When
+// recomputeStructural is true the def-driven fields (tilesWide/tilesHigh/
+// maxOccupants/hayCapacity) are re-derived from buildingDefs; otherwise only
+// the <buildingType> tag changes so hand-tuned values are preserved.
+//
+// If the building still houses animals the type may only change within the
+// same habitat group (barn<->barn, coop<->coop); switching habitats or moving
+// to a non-housing type is refused so livestock aren't orphaned. When animals
+// are present and the change is allowed, their buildingTypeILiveIn is updated
+// to match.
+func ChangeBuildingType(root *Node, buildingID, newType string, recomputeStructural bool) error {
+	def, ok := buildingDefs[newType]
+	if !ok {
+		return fmt.Errorf("unknown building type %q", newType)
+	}
+	farm := farmNode(root)
+	if farm == nil {
+		return fmt.Errorf("farm not found")
+	}
+	bldgs := farm.Child("buildings")
+	if bldgs == nil {
+		return fmt.Errorf("buildings not found")
+	}
+	for _, b := range bldgs.ChildrenNamed("Building") {
+		if textOf(b, "id") != buildingID {
+			continue
+		}
+		oldType := textOf(b, "buildingType")
+		if oldType == newType {
+			return nil
+		}
+		if buildingAnimalCount(b) > 0 && !sameHabitat(oldType, newType) {
+			return fmt.Errorf("cannot change %q to %q while it houses animals: move them to a matching building first", oldType, newType)
+		}
+		if err := setLeaf(b, "buildingType", newType); err != nil {
+			return err
+		}
+		if recomputeStructural {
+			setLeaf(b, "tilesWide", itoa(def.TilesWide))
+			setLeaf(b, "tilesHigh", itoa(def.TilesHigh))
+			setLeaf(b, "maxOccupants", itoa(def.MaxOccupants))
+			setLeaf(b, "hayCapacity", itoa(def.HayCapacity))
+		}
+		updateAnimalsBuildingType(b, newType)
+		return nil
+	}
+	return fmt.Errorf("building %q not found", buildingID)
+}
+
+// sameHabitat reports whether two building types share an animal habitat group,
+// i.e. both are coops or both are barns. Non-housing types never match.
+func sameHabitat(a, b string) bool {
+	return (coopTypes[a] && coopTypes[b]) || (barnTypes[a] && barnTypes[b])
+}
+
+// updateAnimalsBuildingType rewrites buildingTypeILiveIn on every animal the
+// building houses so it stays consistent with a type change.
+func updateAnimalsBuildingType(b *Node, newType string) {
+	dict := animalDict(b)
+	if dict == nil {
+		return
+	}
+	for _, item := range dict.ChildrenNamed("item") {
+		setLeaf(item, "value/FarmAnimal/buildingTypeILiveIn", newType)
+	}
+}
+
 // buildingAnimalCount returns how many FarmAnimal entries a building houses.
 func buildingAnimalCount(b *Node) int {
 	dict := animalDict(b)

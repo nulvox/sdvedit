@@ -38,11 +38,17 @@ func main() {
 	g.Set("sdvedit_moveAnimal", js.FuncOf(jsMoveAnimal))
 	g.Set("sdvedit_animalTypes", js.FuncOf(jsAnimalTypes))
 	g.Set("sdvedit_removeBuilding", js.FuncOf(jsRemoveBuilding))
+	g.Set("sdvedit_changeBuildingType", js.FuncOf(jsChangeBuildingType))
 	g.Set("sdvedit_addFriendship", js.FuncOf(jsAddFriendship))
 	g.Set("sdvedit_knownNPCs", js.FuncOf(jsKnownNPCs))
 	g.Set("sdvedit_getPet", js.FuncOf(jsGetPet))
 	g.Set("sdvedit_setPet", js.FuncOf(jsSetPet))
 	g.Set("sdvedit_addPet", js.FuncOf(jsAddPet))
+	g.Set("sdvedit_getEquipment", js.FuncOf(jsGetEquipment))
+	g.Set("sdvedit_setEquipmentField", js.FuncOf(jsSetEquipmentField))
+	g.Set("sdvedit_setEquipmentColor", js.FuncOf(jsSetEquipmentColor))
+	g.Set("sdvedit_clearEquipmentSlot", js.FuncOf(jsClearEquipmentSlot))
+	g.Set("sdvedit_addClothing", js.FuncOf(jsAddClothing))
 	g.Set("sdvedit_getInventory", js.FuncOf(jsGetInventory))
 	g.Set("sdvedit_setInventoryItem", js.FuncOf(jsSetInventoryItem))
 	g.Set("sdvedit_addInventoryItem", js.FuncOf(jsAddInventoryItem))
@@ -306,6 +312,20 @@ func jsRemoveBuilding(_ js.Value, args []js.Value) any {
 	return okResult(nil)
 }
 
+func jsChangeBuildingType(_ js.Value, args []js.Value) any {
+	if state.root == nil {
+		return errResult("no save loaded")
+	}
+	if len(args) < 3 {
+		return errResult("expected (buildingId, newType, recomputeStructural)")
+	}
+	err := save.ChangeBuildingType(state.root, args[0].String(), args[1].String(), args[2].Bool())
+	if err != nil {
+		return errResult(err.Error())
+	}
+	return okResult(nil)
+}
+
 func jsAddFriendship(_ js.Value, args []js.Value) any {
 	if state.root == nil {
 		return errResult("no save loaded")
@@ -355,6 +375,67 @@ func jsSetPet(_ js.Value, args []js.Value) any {
 		return errResult(err.Error())
 	}
 	if err := save.SetPet(state.root, e); err != nil {
+		return errResult(err.Error())
+	}
+	return okResult(nil)
+}
+
+func jsGetEquipment(_ js.Value, _ []js.Value) any {
+	if state.root == nil {
+		return errResult("no save loaded")
+	}
+	return jsonResult(save.GetEquipment(state.root))
+}
+
+func jsSetEquipmentField(_ js.Value, args []js.Value) any {
+	if state.root == nil {
+		return errResult("no save loaded")
+	}
+	if len(args) < 3 {
+		return errResult("expected (slot, field, value)")
+	}
+	if err := save.SetEquipmentField(state.root, args[0].String(), args[1].String(), args[2].String()); err != nil {
+		return errResult(err.Error())
+	}
+	return okResult(nil)
+}
+
+func jsSetEquipmentColor(_ js.Value, args []js.Value) any {
+	if state.root == nil {
+		return errResult("no save loaded")
+	}
+	if len(args) < 5 {
+		return errResult("expected (slot, r, g, b, a)")
+	}
+	err := save.SetEquipmentColor(state.root, args[0].String(),
+		args[1].Int(), args[2].Int(), args[3].Int(), args[4].Int())
+	if err != nil {
+		return errResult(err.Error())
+	}
+	return okResult(nil)
+}
+
+func jsClearEquipmentSlot(_ js.Value, args []js.Value) any {
+	if state.root == nil {
+		return errResult("no save loaded")
+	}
+	if len(args) < 1 {
+		return errResult("expected (slot)")
+	}
+	if err := save.ClearEquipmentSlot(state.root, args[0].String()); err != nil {
+		return errResult(err.Error())
+	}
+	return okResult(nil)
+}
+
+func jsAddClothing(_ js.Value, args []js.Value) any {
+	if state.root == nil {
+		return errResult("no save loaded")
+	}
+	if len(args) < 3 {
+		return errResult("expected (slot, itemId, name)")
+	}
+	if err := save.AddClothing(state.root, args[0].String(), args[1].String(), args[2].String()); err != nil {
 		return errResult(err.Error())
 	}
 	return okResult(nil)

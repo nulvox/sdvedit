@@ -1,6 +1,7 @@
 package save
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"strings"
@@ -309,6 +310,111 @@ func TestRealSave_Bundles(t *testing.T) {
 		t.Error("no bundles found")
 	}
 	t.Logf("Bundles: %d", len(bundles))
+}
+
+const inventoryFixture = `<?xml version="1.0" encoding="utf-8"?>
+<SaveGame xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <player>
+    <name>Trent</name>
+    <items>
+      <Item xsi:nil="true" />
+      <Item xsi:type="Object">
+        <name>Stone</name><itemId>390</itemId><stack>50</stack><quality>0</quality>
+      </Item>
+      <Item xsi:nil="true" />
+    </items>
+  </player>
+</SaveGame>`
+
+func TestAddInventoryItem_FillsEmptySlot(t *testing.T) {
+	root, _ := Parse(strings.NewReader(inventoryFixture))
+
+	if err := AddInventoryItem(root, 0, "388", "", 99, 2); err != nil {
+		t.Fatalf("AddInventoryItem: %v", err)
+	}
+
+	items := GetInventory(root)
+	if len(items) != 3 {
+		t.Fatalf("inventory slot count changed: got %d, want 3", len(items))
+	}
+	if items[0].IsNil {
+		t.Error("slot 0 still nil after add")
+	}
+	if items[0].ItemID != "388" {
+		t.Errorf("ItemID = %q, want 388", items[0].ItemID)
+	}
+	if items[0].Name != "Wood" {
+		t.Errorf("Name = %q, want catalog default Wood", items[0].Name)
+	}
+	if items[0].Stack != 99 {
+		t.Errorf("Stack = %d, want 99", items[0].Stack)
+	}
+	if items[0].Quality != 2 {
+		t.Errorf("Quality = %d, want 2", items[0].Quality)
+	}
+	if items[0].XsiType != "Object" {
+		t.Errorf("XsiType = %q, want Object", items[0].XsiType)
+	}
+	// existing item untouched
+	if items[1].ItemID != "390" || items[1].Stack != 50 {
+		t.Errorf("slot 1 disturbed: %+v", items[1])
+	}
+	if !items[2].IsNil {
+		t.Error("slot 2 should still be nil")
+	}
+}
+
+func TestAddInventoryItem_RejectsOccupied(t *testing.T) {
+	root, _ := Parse(strings.NewReader(inventoryFixture))
+	err := AddInventoryItem(root, 1, "388", "", 1, 0)
+	if err == nil {
+		t.Fatal("expected error when slot is occupied")
+	}
+}
+
+func TestAddInventoryItem_OutOfRange(t *testing.T) {
+	root, _ := Parse(strings.NewReader(inventoryFixture))
+	if err := AddInventoryItem(root, 99, "388", "", 1, 0); err == nil {
+		t.Fatal("expected error for out-of-range slot")
+	}
+}
+
+func TestAddInventoryItem_CustomNameOverridesCatalog(t *testing.T) {
+	root, _ := Parse(strings.NewReader(inventoryFixture))
+	if err := AddInventoryItem(root, 0, "390", "Pet Rock", 1, 0); err != nil {
+		t.Fatal(err)
+	}
+	items := GetInventory(root)
+	if items[0].Name != "Pet Rock" {
+		t.Errorf("Name = %q, want Pet Rock", items[0].Name)
+	}
+}
+
+func TestAddInventoryItem_RoundTripsThroughXML(t *testing.T) {
+	root, _ := Parse(strings.NewReader(inventoryFixture))
+	if err := AddInventoryItem(root, 0, "388", "", 99, 2); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := Serialize(root, &buf); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `<Item xsi:type="Object">`) {
+		t.Errorf("serialized output missing Object Item; got: %s", out)
+	}
+	if strings.Count(out, `<Item xsi:nil="true"`) != 1 {
+		t.Errorf("expected exactly one nil Item left; got: %s", out)
+	}
+	// re-parse to confirm shape is durable
+	root2, err := Parse(strings.NewReader(out))
+	if err != nil {
+		t.Fatalf("re-parse: %v", err)
+	}
+	items := GetInventory(root2)
+	if len(items) != 3 || items[0].IsNil || items[0].Stack != 99 {
+		t.Errorf("after round-trip, got %+v", items)
+	}
 }
 
 func TestRealSave_RoundTrip(t *testing.T) {

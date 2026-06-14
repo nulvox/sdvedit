@@ -553,11 +553,25 @@ function loadBuildings() {
 
 function loadInventory() {
   const items = getJSON(sdvedit_getInventory);
+  const catalog = getJSON(sdvedit_itemCatalog);
+
+  const catalogOptions = catalog.map(d =>
+    `<option value="${esc(d.id)}">${esc(d.name)} (#${esc(d.id)})</option>`
+  ).join('');
 
   const rows = items.map((item, i) => {
     if (item.isNil) {
       return `<tr class="empty-slot">
-        <td>${i}</td><td colspan="5" class="muted">Empty</td>
+        <td>${i}</td>
+        <td>
+          <select class="inv-new-id" data-idx="${i}">${catalogOptions}</select>
+        </td>
+        <td><input type="text" class="inv-new-name" data-idx="${i}" placeholder="(optional)" style="width:8em"></td>
+        <td><input type="number" class="inv-new-stk" data-idx="${i}" value="1" min="1" max="999"></td>
+        <td><input type="number" class="inv-new-qlt" data-idx="${i}" value="0" min="0" max="4"></td>
+        <td>
+          <button class="btn-sm inv-add-btn" data-idx="${i}">Add</button>
+        </td>
       </tr>`;
     }
     return `<tr>
@@ -574,7 +588,8 @@ function loadInventory() {
 
   document.getElementById('panel-inventory').innerHTML = `
     <h2>Inventory</h2>
-    <p class="hint">Quality: 0=Normal, 1=Silver, 2=Gold, 4=Iridium</p>
+    <p class="hint">Quality: 0=Normal, 1=Silver, 2=Gold, 4=Iridium.
+      Empty slots show a picker — choose an item, set stack/quality, click Add.</p>
     <table class="data-table">
       <thead>
         <tr><th>#</th><th>Name</th><th>Type</th><th>Stack</th><th>Quality</th><th></th></tr>
@@ -588,6 +603,25 @@ function loadInventory() {
       call(sdvedit_setInventoryItem, i, num('inv-stk-' + i), num('inv-qlt-' + i));
       markDirty();
       showToast('Slot ' + i + ' saved');
+    });
+  });
+
+  document.querySelectorAll('.inv-add-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const i = parseInt(btn.dataset.idx, 10);
+      const row = btn.closest('tr');
+      const itemId = row.querySelector('.inv-new-id').value;
+      const name = row.querySelector('.inv-new-name').value.trim();
+      const stack = parseInt(row.querySelector('.inv-new-stk').value, 10) || 1;
+      const quality = parseInt(row.querySelector('.inv-new-qlt').value, 10) || 0;
+      try {
+        call(sdvedit_addInventoryItem, i, itemId, name, stack, quality);
+        markDirty();
+        showToast('Slot ' + i + ' added');
+        loadInventory();
+      } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+      }
     });
   });
 }

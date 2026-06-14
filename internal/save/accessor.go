@@ -518,6 +518,60 @@ func setRecipes(root *Node, section string, entries []RecipeEntry) {
 func SetCookingRecipes(root *Node, entries []RecipeEntry)  { setRecipes(root, "cookingRecipes", entries) }
 func SetCraftingRecipes(root *Node, entries []RecipeEntry) { setRecipes(root, "craftingRecipes", entries) }
 
+// AddRecipe marks a recipe as known by appending a new <item> with a times-made
+// count of 0 under player/<section>. A recipe present in the dictionary counts
+// as learned regardless of its count, so this is what unlocks it. The call is
+// idempotent: if the recipe is already present its count is left untouched.
+// section is "cookingRecipes" or "craftingRecipes".
+func AddRecipe(root *Node, section, name string) error {
+	node := root.Get("player/" + section)
+	if node == nil {
+		return fmt.Errorf("%s not found", section)
+	}
+	for _, item := range node.ChildrenNamed("item") {
+		if key := item.Get("key/string"); key != nil && key.Text == name {
+			return nil // already known
+		}
+	}
+	node.Children = append(node.Children, &Node{Name: "item", Children: []*Node{
+		{Name: "key", Children: []*Node{{Name: "string", Text: name}}},
+		{Name: "value", Children: []*Node{{Name: "int", Text: "0"}}},
+	}})
+	return nil
+}
+
+// LearnAllRecipes adds every recipe in the vanilla catalog for the given
+// section that the player doesn't already know. Returns the number newly added.
+func LearnAllRecipes(root *Node, section string) int {
+	node := root.Get("player/" + section)
+	if node == nil {
+		return 0
+	}
+	known := map[string]bool{}
+	for _, item := range node.ChildrenNamed("item") {
+		if key := item.Get("key/string"); key != nil {
+			known[key.Text] = true
+		}
+	}
+	var catalog []string
+	switch section {
+	case "cookingRecipes":
+		catalog = KnownCookingRecipes()
+	case "craftingRecipes":
+		catalog = KnownCraftingRecipes()
+	}
+	added := 0
+	for _, name := range catalog {
+		if known[name] {
+			continue
+		}
+		AddRecipe(root, section, name)
+		known[name] = true
+		added++
+	}
+	return added
+}
+
 // --- Mail ---
 
 func GetMailReceived(root *Node) []string {
@@ -781,6 +835,41 @@ func AddInventoryItem(root *Node, slot int, itemID, name string, stack, quality 
 	}
 
 	// Replace xsi:nil="true" with xsi:type="Object" and populate children.
+	item.Attrs = []xml.Attr{{
+		Name:  xml.Name{Space: "http://www.w3.org/2001/XMLSchema-instance", Local: "type"},
+		Value: "Object",
+	}}
+	item.Children = buildObjectItemChildren(itemID, name, stack, quality, def)
+	return nil
+}
+
+// ReplaceInventoryItem swaps the item type in a populated slot, re-emitting the
+// child nodes for the new itemID. Stack and quality are applied to the new item.
+// Returns an error if the slot is out of range or currently empty (use
+// AddInventoryItem to fill an empty slot).
+func ReplaceInventoryItem(root *Node, slot int, itemID, name string, stack, quality int) error {
+	items := root.Get("player/items")
+	if items == nil {
+		return fmt.Errorf("items not found")
+	}
+	children := items.ChildrenNamed("Item")
+	if slot < 0 || slot >= len(children) {
+		return fmt.Errorf("slot %d out of range", slot)
+	}
+	item := children[slot]
+	if item.Attr("nil") == "true" {
+		return fmt.Errorf("slot %d is empty; use AddInventoryItem", slot)
+	}
+	if itemID == "" {
+		return fmt.Errorf("itemID required")
+	}
+	if stack < 1 {
+		stack = 1
+	}
+	def := lookupItemDef(itemID)
+	if name == "" {
+		name = def.Name
+	}
 	item.Attrs = []xml.Attr{{
 		Name:  xml.Name{Space: "http://www.w3.org/2001/XMLSchema-instance", Local: "type"},
 		Value: "Object",

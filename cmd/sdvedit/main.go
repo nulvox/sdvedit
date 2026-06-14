@@ -41,11 +41,14 @@ func main() {
 	g.Set("sdvedit_setInventoryItem", js.FuncOf(jsSetInventoryItem))
 	g.Set("sdvedit_addInventoryItem", js.FuncOf(jsAddInventoryItem))
 	g.Set("sdvedit_clearInventorySlot", js.FuncOf(jsClearInventorySlot))
+	g.Set("sdvedit_replaceInventoryItem", js.FuncOf(jsReplaceInventoryItem))
 	g.Set("sdvedit_itemCatalog", js.FuncOf(jsItemCatalog))
 	g.Set("sdvedit_getCookingRecipes", js.FuncOf(jsGetCookingRecipes))
 	g.Set("sdvedit_setCookingRecipes", js.FuncOf(jsSetCookingRecipes))
 	g.Set("sdvedit_getCraftingRecipes", js.FuncOf(jsGetCraftingRecipes))
 	g.Set("sdvedit_setCraftingRecipes", js.FuncOf(jsSetCraftingRecipes))
+	g.Set("sdvedit_addRecipe", js.FuncOf(jsAddRecipe))
+	g.Set("sdvedit_learnAllRecipes", js.FuncOf(jsLearnAllRecipes))
 	g.Set("sdvedit_getMail", js.FuncOf(jsGetMail))
 	g.Set("sdvedit_addMail", js.FuncOf(jsAddMail))
 	g.Set("sdvedit_removeMail", js.FuncOf(jsRemoveMail))
@@ -319,6 +322,22 @@ func jsAddInventoryItem(_ js.Value, args []js.Value) any {
 	return okResult(nil)
 }
 
+func jsReplaceInventoryItem(_ js.Value, args []js.Value) any {
+	if state.root == nil {
+		return errResult("no save loaded")
+	}
+	if len(args) < 5 {
+		return errResult("expected (slot, itemId, name, stack, quality)")
+	}
+	err := save.ReplaceInventoryItem(state.root,
+		args[0].Int(), args[1].String(), args[2].String(),
+		args[3].Int(), args[4].Int())
+	if err != nil {
+		return errResult(err.Error())
+	}
+	return okResult(nil)
+}
+
 func jsClearInventorySlot(_ js.Value, args []js.Value) any {
 	if state.root == nil {
 		return errResult("no save loaded")
@@ -372,6 +391,30 @@ func jsSetCraftingRecipes(_ js.Value, args []js.Value) any {
 	}
 	save.SetCraftingRecipes(state.root, entries)
 	return okResult(nil)
+}
+
+func jsAddRecipe(_ js.Value, args []js.Value) any {
+	if state.root == nil {
+		return errResult("no save loaded")
+	}
+	if len(args) < 2 {
+		return errResult("expected (section, name)")
+	}
+	if err := save.AddRecipe(state.root, args[0].String(), args[1].String()); err != nil {
+		return errResult(err.Error())
+	}
+	return okResult(nil)
+}
+
+func jsLearnAllRecipes(_ js.Value, args []js.Value) any {
+	if state.root == nil {
+		return errResult("no save loaded")
+	}
+	if len(args) < 1 {
+		return errResult("expected (section)")
+	}
+	added := save.LearnAllRecipes(state.root, args[0].String())
+	return okResult(added)
 }
 
 func jsGetMail(_ js.Value, _ []js.Value) any {

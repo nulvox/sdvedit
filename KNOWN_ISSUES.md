@@ -58,18 +58,38 @@ sketch of the **fix** so anyone picking it up has a starting point.
 - **Fix shipped:** the name cell is now a text input and `name` is included in
   the per-row apply patch. See `loadAnimals`.
 
+### Inventory: item type can now be swapped in place
+
+- **Symptom:** editing a populated slot only adjusted stack/quality; changing
+  Stone → Iridium Ore meant clear-and-re-add.
+- **Fix shipped:** `save.ReplaceInventoryItem(root, slot, itemId, name, stack,
+  quality)` re-emits the item's child nodes for a new `itemId` (reusing
+  `buildObjectItemChildren`/`lookupItemDef`), exposed via
+  `sdvedit_replaceInventoryItem`. Populated rows now carry a catalog picker and
+  a "Replace" button. See `internal/save/accessor.go` and `loadInventory`.
+
+### Recipes: "Learn All" now unlocks the whole vanilla catalog
+
+- **Symptom:** the Learn-All button only set `timesMade=1` on recipes the
+  player had already learned; it could not unlock new ones.
+- **Fix shipped:** `recipe_catalog.go` holds the vanilla cooking and crafting
+  recipe key lists; `save.AddRecipe(root, section, name)` appends a learned
+  entry (`value/int=0`, idempotent) and `save.LearnAllRecipes(root, section)`
+  iterates the catalog, returning the count added. Exposed via
+  `sdvedit_addRecipe`/`sdvedit_learnAllRecipes`; the "Learn All" buttons now
+  unlock every catalog recipe and reload. Unlisted/modded recipes a save
+  already knows are preserved. See `loadRecipes`.
+
+### Friendships: pet breed options are filtered by type
+
+- **Symptom:** the breed field was a free number input not tied to Dog vs Cat.
+- **Fix shipped:** the breed control is now a dropdown driven by `PET_BREEDS`
+  per pet type, rebuilt when the Type dropdown changes. See `petBreedField` /
+  `loadFriendships`.
+
 ---
 
 ## Open issues
-
-### Inventory: cannot replace an item type
-
-Editing a slot only adjusts stack/quality. To change Stone → Iridium Ore the
-user now has to clear the slot (see Fixed above) and re-add it, rather than
-swapping the type in place.
-
-**Fix sketch:** broaden `SetInventoryItem` (or add a sibling) to optionally
-take a new `itemId`/`name` and re-emit child nodes from `lookupItemDef`.
 
 ### Inventory: equipped gear is not surfaced at all
 

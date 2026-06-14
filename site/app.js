@@ -172,6 +172,15 @@ function loadSkills() {
 const FRIENDSHIP_STATUSES = ['Friendly', 'Dating', 'Engaged', 'Married', 'Divorced'];
 const HEARTS_MAX = 14; // 3500 pts
 
+// Vanilla pet skins available per pet type (whichBreed index).
+const PET_BREEDS = { Dog: [0, 1, 2], Cat: [0, 1, 2] };
+
+function petBreedField(type, breed) {
+  const breeds = PET_BREEDS[type] || [0];
+  const value = breeds.includes(breed) ? breed : breeds[0];
+  return selectField('Breed (skin)', 'pet-breed', value, breeds);
+}
+
 function loadFriendships() {
   const entries = getJSON(sdvedit_getFriendships);
   const pet = getJSON(sdvedit_getPet);
@@ -196,7 +205,7 @@ function loadFriendships() {
         ${selectField('Gender', 'pet-gender', pet.gender, ['Male', 'Female'])}
         ${numField('Friendship (0–1000)', 'pet-fr', pet.friendship, 0, 1000)}
         ${numField('Times Pet', 'pet-tp', pet.timesPet, 0, 9999)}
-        ${numField('Breed (skin)', 'pet-breed', pet.breed, 0, 10)}
+        ${petBreedField(pet.petType, pet.breed)}
       </div>
       <div class="actions">
         <button id="pet-save-btn" class="btn-primary">Apply Pet Changes</button>
@@ -253,6 +262,17 @@ function loadFriendships() {
   });
 
   if (pet) {
+    const petTypeSel = document.getElementById('pet-type');
+    const petBreedSel = document.getElementById('pet-breed');
+    petTypeSel.addEventListener('change', () => {
+      const breeds = PET_BREEDS[petTypeSel.value] || [0];
+      const cur = parseInt(petBreedSel.value, 10) || 0;
+      const sel = breeds.includes(cur) ? cur : breeds[0];
+      petBreedSel.innerHTML = breeds
+        .map(b => `<option value="${b}" ${b === sel ? 'selected' : ''}>${b}</option>`)
+        .join('');
+    });
+
     document.getElementById('pet-save-btn').addEventListener('click', () => {
       const updated = {
         name: val('pet-name'),
@@ -591,6 +611,8 @@ function loadInventory() {
       <td>
         <button class="btn-sm inv-apply-btn" data-idx="${i}">Apply</button>
         <button class="btn-sm inv-clear-btn" data-idx="${i}">Clear</button>
+        <select class="inv-rep-id" data-idx="${i}">${catalogOptions}</select>
+        <button class="btn-sm inv-replace-btn" data-idx="${i}">Replace</button>
       </td>
     </tr>`;
   }).join('');
@@ -612,6 +634,24 @@ function loadInventory() {
       call(sdvedit_setInventoryItem, i, num('inv-stk-' + i), num('inv-qlt-' + i));
       markDirty();
       showToast('Slot ' + i + ' saved');
+    });
+  });
+
+  document.querySelectorAll('.inv-replace-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const i = parseInt(btn.dataset.idx, 10);
+      const row = btn.closest('tr');
+      const itemId = row.querySelector('.inv-rep-id').value;
+      const stack = num('inv-stk-' + i);
+      const quality = num('inv-qlt-' + i);
+      try {
+        call(sdvedit_replaceInventoryItem, i, itemId, '', stack, quality);
+        markDirty();
+        showToast('Slot ' + i + ' replaced');
+        loadInventory();
+      } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+      }
     });
   });
 
@@ -762,7 +802,7 @@ function loadRecipes() {
       <section>
         <h3>Cooking Recipes</h3>
         <div class="actions">
-          <button id="ck-max-btn" class="btn-secondary">Learn All (set 1)</button>
+          <button id="ck-max-btn" class="btn-secondary">Learn All</button>
           <button id="ck-save-btn" class="btn-primary">Apply</button>
         </div>
         <table class="data-table">
@@ -773,7 +813,7 @@ function loadRecipes() {
       <section>
         <h3>Crafting Recipes</h3>
         <div class="actions">
-          <button id="cr-max-btn" class="btn-secondary">Learn All (set 1)</button>
+          <button id="cr-max-btn" class="btn-secondary">Learn All</button>
           <button id="cr-save-btn" class="btn-primary">Apply</button>
         </div>
         <table class="data-table">
@@ -784,10 +824,16 @@ function loadRecipes() {
     </div>`;
 
   document.getElementById('ck-max-btn').addEventListener('click', () => {
-    cooking.forEach((_, i) => { document.getElementById('ck-tm-' + i).value = 1; });
+    const added = call(sdvedit_learnAllRecipes, 'cookingRecipes');
+    markDirty();
+    showToast(added + ' cooking recipe' + (added === 1 ? '' : 's') + ' learned');
+    loadRecipes();
   });
   document.getElementById('cr-max-btn').addEventListener('click', () => {
-    crafting.forEach((_, i) => { document.getElementById('cr-tm-' + i).value = 1; });
+    const added = call(sdvedit_learnAllRecipes, 'craftingRecipes');
+    markDirty();
+    showToast(added + ' crafting recipe' + (added === 1 ? '' : 's') + ' learned');
+    loadRecipes();
   });
 
   document.getElementById('ck-save-btn').addEventListener('click', () => {

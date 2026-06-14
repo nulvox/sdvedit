@@ -499,6 +499,68 @@ func TestAddInventoryItem_RoundTripsThroughXML(t *testing.T) {
 	}
 }
 
+func TestReplaceInventoryItem_ChangesType(t *testing.T) {
+	root, _ := Parse(strings.NewReader(inventoryFixture))
+
+	// slot 1 holds Stone (390); replace with Iridium Ore (386)
+	if err := ReplaceInventoryItem(root, 1, "386", "", 5, 2); err != nil {
+		t.Fatalf("ReplaceInventoryItem: %v", err)
+	}
+
+	items := GetInventory(root)
+	if len(items) != 3 {
+		t.Fatalf("slot count changed: got %d, want 3", len(items))
+	}
+	if items[1].ItemID != "386" {
+		t.Errorf("ItemID = %q, want 386", items[1].ItemID)
+	}
+	if items[1].Name != "Iridium Ore" {
+		t.Errorf("Name = %q, want catalog default Iridium Ore", items[1].Name)
+	}
+	if items[1].Stack != 5 {
+		t.Errorf("Stack = %d, want 5", items[1].Stack)
+	}
+	if items[1].Quality != 2 {
+		t.Errorf("Quality = %d, want 2", items[1].Quality)
+	}
+	if items[1].XsiType != "Object" {
+		t.Errorf("XsiType = %q, want Object", items[1].XsiType)
+	}
+}
+
+func TestReplaceInventoryItem_RejectsEmptySlot(t *testing.T) {
+	root, _ := Parse(strings.NewReader(inventoryFixture))
+	if err := ReplaceInventoryItem(root, 0, "386", "", 1, 0); err == nil {
+		t.Fatal("expected error replacing an empty slot")
+	}
+}
+
+func TestReplaceInventoryItem_OutOfRange(t *testing.T) {
+	root, _ := Parse(strings.NewReader(inventoryFixture))
+	if err := ReplaceInventoryItem(root, 99, "386", "", 1, 0); err == nil {
+		t.Fatal("expected error for out-of-range slot")
+	}
+}
+
+func TestReplaceInventoryItem_RoundTripsThroughXML(t *testing.T) {
+	root, _ := Parse(strings.NewReader(inventoryFixture))
+	if err := ReplaceInventoryItem(root, 1, "386", "Custom Ore", 7, 1); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := Serialize(root, &buf); err != nil {
+		t.Fatal(err)
+	}
+	root2, err := Parse(strings.NewReader(buf.String()))
+	if err != nil {
+		t.Fatalf("re-parse: %v", err)
+	}
+	items := GetInventory(root2)
+	if items[1].ItemID != "386" || items[1].Name != "Custom Ore" || items[1].Stack != 7 {
+		t.Errorf("after round-trip, slot 1 = %+v", items[1])
+	}
+}
+
 func TestClearInventorySlot_EmptiesPopulatedSlot(t *testing.T) {
 	root, _ := Parse(strings.NewReader(inventoryFixture))
 
@@ -555,6 +617,111 @@ func TestClearInventorySlot_RoundTripsThroughXML(t *testing.T) {
 	items := GetInventory(root2)
 	if len(items) != 3 || !items[1].IsNil {
 		t.Errorf("after round-trip, slot 1 not nil: %+v", items)
+	}
+}
+
+const recipeFixture = `<?xml version="1.0" encoding="utf-8"?>
+<SaveGame>
+  <player>
+    <cookingRecipes>
+      <item><key><string>Fried Egg</string></key><value><int>3</int></value></item>
+    </cookingRecipes>
+    <craftingRecipes>
+      <item><key><string>Chest</string></key><value><int>1</int></value></item>
+    </craftingRecipes>
+  </player>
+</SaveGame>`
+
+func TestAddRecipe_AppendsNewRecipe(t *testing.T) {
+	root, _ := Parse(strings.NewReader(recipeFixture))
+
+	if err := AddRecipe(root, "cookingRecipes", "Pizza"); err != nil {
+		t.Fatalf("AddRecipe: %v", err)
+	}
+
+	recipes := GetCookingRecipes(root)
+	var found *RecipeEntry
+	for i := range recipes {
+		if recipes[i].Name == "Pizza" {
+			found = &recipes[i]
+		}
+	}
+	if found == nil {
+		t.Fatal("Pizza not present after AddRecipe")
+	}
+	if found.TimesMade != 0 {
+		t.Errorf("new recipe TimesMade = %d, want 0", found.TimesMade)
+	}
+}
+
+func TestAddRecipe_IdempotentPreservesCount(t *testing.T) {
+	root, _ := Parse(strings.NewReader(recipeFixture))
+
+	if err := AddRecipe(root, "cookingRecipes", "Fried Egg"); err != nil {
+		t.Fatalf("AddRecipe: %v", err)
+	}
+
+	recipes := GetCookingRecipes(root)
+	count := 0
+	for _, r := range recipes {
+		if r.Name == "Fried Egg" {
+			count++
+			if r.TimesMade != 3 {
+				t.Errorf("existing recipe count changed to %d, want 3", r.TimesMade)
+			}
+		}
+	}
+	if count != 1 {
+		t.Errorf("Fried Egg appears %d times, want 1 (no duplicate)", count)
+	}
+}
+
+func TestAddRecipe_RoundTripsThroughXML(t *testing.T) {
+	root, _ := Parse(strings.NewReader(recipeFixture))
+	if err := AddRecipe(root, "craftingRecipes", "Furnace"); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := Serialize(root, &buf); err != nil {
+		t.Fatal(err)
+	}
+	root2, err := Parse(strings.NewReader(buf.String()))
+	if err != nil {
+		t.Fatalf("re-parse: %v", err)
+	}
+	recipes := GetCraftingRecipes(root2)
+	found := false
+	for _, r := range recipes {
+		if r.Name == "Furnace" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("Furnace not durable through round-trip: %+v", recipes)
+	}
+}
+
+func TestLearnAllRecipes_UnlocksWholeCatalog(t *testing.T) {
+	root, _ := Parse(strings.NewReader(recipeFixture))
+
+	added := LearnAllRecipes(root, "cookingRecipes")
+	if added <= 0 {
+		t.Fatalf("LearnAllRecipes added %d, want > 0", added)
+	}
+
+	recipes := GetCookingRecipes(root)
+	known := map[string]bool{}
+	for _, r := range recipes {
+		known[r.Name] = true
+	}
+	for _, name := range KnownCookingRecipes() {
+		if !known[name] {
+			t.Errorf("recipe %q not learned after LearnAllRecipes", name)
+		}
+	}
+	// pre-existing recipe preserved exactly once
+	if !known["Fried Egg"] {
+		t.Error("pre-existing Fried Egg missing after LearnAll")
 	}
 }
 

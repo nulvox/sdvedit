@@ -136,30 +136,60 @@ sketch of the **fix** so anyone picking it up has a starting point.
   exists), exposed via `sdvedit_addPet`. When no pet is present the tab now
   shows an "Add Pet" form. See `AddPet`/`buildPetNode` and `loadFriendships`.
 
+### Inventory: equipped gear is now surfaced
+
+- **Symptom:** the top-level `<hat>`, `<shirtItem>`, `<pantsItem>`, `<boots>`,
+  and `<leftRing>`/`<rightRing>` slots were ignored by the Inventory tab, so
+  ring effects, boot bonuses, and clothing colour couldn't be edited.
+- **Fix shipped:** `equipment.go` adds `GetEquipment` (six slots, present/absent
+  aware), `SetEquipmentField`, `SetEquipmentColor` (keeps `PackedValue`
+  consistent via `A<<24|B<<16|G<<8|R`), `ClearEquipmentSlot` (removes the
+  element, matching how the game represents an unequipped slot), and
+  `AddClothing`. Exposed via `sdvedit_getEquipment` /
+  `sdvedit_setEquipmentField` / `sdvedit_setEquipmentColor` /
+  `sdvedit_clearEquipmentSlot` / `sdvedit_addClothing`; the Inventory tab grows
+  an "Equipped Gear" section. See `internal/save/equipment.go` and `site/app.js`
+  `equipmentSectionHtml`/`wireEquipment`.
+- **Note / scope:** real 1.6 saves *omit* `hat`/`boots`/`leftRing`/`rightRing`
+  entirely when nothing is equipped (they are not `xsi:nil` placeholders), and
+  none appear in any reference save, so there is no schema-verified template to
+  build one from scratch. Read/edit/clear work for all six slots and creation
+  works for clothing (ground-truthed from a real save); **creating a hat, pair
+  of boots, or ring from an empty slot is deliberately not implemented** — equip
+  one in-game first, then edit it here. See the open issue below.
+
+### Buildings: building type can now be changed
+
+- **Symptom:** the edit form covered tile position and paint but not type;
+  changing type in-game requires demolition.
+- **Fix shipped:** `save.ChangeBuildingType(root, id, newType, recomputeStructural)`
+  sets `<buildingType>` and, when `recomputeStructural` is true, re-derives
+  `tilesWide/tilesHigh/maxOccupants/hayCapacity` from `buildingDefs`. While the
+  building houses animals the type may only change within the same habitat group
+  (barn↔barn, coop↔coop), so a Barn→Big Barn upgrade is allowed but switching to
+  a coop or a non-housing type is refused; occupants' `buildingTypeILiveIn` is
+  updated to match. Exposed via `sdvedit_changeBuildingType`; each building card
+  gains a Type dropdown, a "recompute size/occupants" checkbox, and a "Change
+  Type" button. See `internal/save/building_factory.go` and `loadBuildings`.
+
 ---
 
 ## Open issues
 
-### Inventory: equipped gear is not surfaced at all
+### Equipment: creating a hat, boots, or ring from an empty slot
 
-The save has top-level `<hat>`, `<shirtItem>`, `<pantsItem>`, `<boots>`, and
-`<leftRing>`/`<rightRing>` slots distinct from `<items>`. The Inventory tab
-ignores them, so the user can't edit ring effects or hat appearance even
-though all the data is present in the parsed tree.
+Read/edit/clear are supported for all six worn-gear slots, and clothing can be
+created, but conjuring a brand-new hat/boots/ring node is not. The blocker is
+schema fidelity: those slots are absent (not `xsi:nil`) when unequipped, and no
+reference save exposes a populated example, so the exact element order the
+game's `XmlSerializer` expects can't be verified — a fabricated node risks being
+silently dropped or rejected on load.
 
-**Fix sketch:** new accessors `GetEquipment`/`SetEquipment` reading those
-top-level slots; new section under the Inventory tab.
-
-### Buildings: cannot change building type
-
-Edit form covers tile position and paint but not type. Changing type
-in-game requires demolition; in the save it's a single `<buildingType>`
-field, but tilesWide/Tall/maxOccupants/hayCapacity all need to stay
-consistent.
-
-**Fix sketch:** add a type dropdown; on apply, re-derive the def-driven
-fields from `buildingDefs`. Probably gate behind a "recompute structural
-fields" checkbox so users who hand-tuned values aren't surprised.
+**Fix sketch:** capture a real populated `<hat>`/`<boots>`/`<leftRing>` from a
+save that has them equipped, model `buildHatNode`/`buildBootsNode`/
+`buildRingNode` on that exact field order, and add per-type "Add" forms (mirror
+`AddClothing`). Verify by loading an edited save in-game, not just round-tripping
+through the parser.
 
 ### Quests and Bundles tabs are intentionally read-only
 

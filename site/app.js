@@ -547,7 +547,8 @@ function loadBuildings() {
         <span class="muted">at (${b.tileX}, ${b.tileY})</span>
       </summary>
       <div class="grid">
-        <div class="field"><span>Type</span><span>${esc(b.buildingType)}</span></div>
+        ${selectField('Type', 'bl-type-' + i, b.buildingType, buildingTypes)}
+        ${checkboxField('Recompute size/occupants on type change', 'bl-recompute-' + i, true)}
         ${numField('Tile X', 'bl-tx-' + i, b.tileX, 0, 120)}
         ${numField('Tile Y', 'bl-ty-' + i, b.tileY, 0, 120)}
         ${numField('Days of Construction Left', 'bl-dc-' + i, b.daysOfConstruction, 0, 9)}
@@ -581,6 +582,7 @@ function loadBuildings() {
       </fieldset>
       <div class="actions">
         <button class="btn-primary bl-apply-btn" data-idx="${i}">Apply Changes</button>
+        <button class="btn-secondary bl-type-btn" data-idx="${i}">Change Type</button>
         <button class="btn-danger bl-del-btn" data-idx="${i}">Delete Building</button>
       </div>
     </details>`).join('');
@@ -639,6 +641,28 @@ function loadBuildings() {
 
       markDirty();
       showToast((b.buildingType || 'Building') + ' saved');
+    });
+  });
+
+  document.querySelectorAll('.bl-type-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const i = parseInt(btn.dataset.idx, 10);
+      const b = buildings[i];
+      const newType = val('bl-type-' + i);
+      if (newType === b.buildingType) {
+        showToast('Type unchanged');
+        return;
+      }
+      const recompute = checked('bl-recompute-' + i);
+      try {
+        call(sdvedit_changeBuildingType, b.id, newType, recompute);
+        markDirty();
+        showToast('Building changed to ' + newType);
+        loadBuildings();
+      } catch (e) {
+        showToast(e.message, 'error');
+        loadBuildings(); // reset the dropdown to the unchanged type
+      }
     });
   });
 
@@ -760,7 +784,8 @@ function loadInventory() {
         <tr><th>#</th><th>Name</th><th>Type</th><th>Stack</th><th>Quality</th><th></th></tr>
       </thead>
       <tbody>${rows}</tbody>
-    </table>`;
+    </table>
+    ${equipmentSectionHtml()}`;
 
   document.querySelectorAll('.inv-apply-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -818,6 +843,134 @@ function loadInventory() {
         loadInventory();
       } catch (err) {
         showToast('Error: ' + err.message, 'error');
+      }
+    });
+  });
+
+  wireEquipment();
+}
+
+// ── Inventory: equipped gear ──────────────────────────────────────────────────
+
+const EQUIP_LABELS = {
+  hat: 'Hat', shirt: 'Shirt', pants: 'Pants',
+  boots: 'Boots', leftRing: 'Left Ring', rightRing: 'Right Ring',
+};
+
+function equipmentSectionHtml() {
+  const slots = getJSON(sdvedit_getEquipment);
+  const cards = slots.map(s => {
+    const label = EQUIP_LABELS[s.slot] || s.slot;
+    if (!s.present) {
+      // Clothing can be re-created from a verified template; hat/boots/ring
+      // creation is not supported yet (no schema-verified node shape).
+      if (s.kind === 'clothing') {
+        return `<details class="building-card">
+          <summary>${esc(label)} <span class="muted">(empty)</span></summary>
+          <div class="grid">
+            ${field('Item ID', 'eq-add-id-' + s.slot, '', 'text')}
+            ${field('Name', 'eq-add-name-' + s.slot, '', 'text')}
+          </div>
+          <div class="actions">
+            <button class="btn-primary eq-add-btn" data-slot="${s.slot}">Add ${esc(label)}</button>
+          </div>
+        </details>`;
+      }
+      return `<details class="building-card">
+        <summary>${esc(label)} <span class="muted">(empty)</span></summary>
+        <p class="hint">Nothing equipped. Adding a ${esc(label.toLowerCase())} from scratch
+          isn't supported yet — equip one in-game, then edit it here.</p>
+      </details>`;
+    }
+
+    let extra = '';
+    if (s.kind === 'clothing') {
+      extra = `
+        <fieldset><legend>Color (RGBA)</legend>
+          <div class="grid">
+            ${numField('R', 'eq-r-' + s.slot, s.colorR, 0, 255)}
+            ${numField('G', 'eq-g-' + s.slot, s.colorG, 0, 255)}
+            ${numField('B', 'eq-b-' + s.slot, s.colorB, 0, 255)}
+            ${numField('A', 'eq-a-' + s.slot, s.colorA, 0, 255)}
+          </div>
+        </fieldset>
+        ${checkboxField('Dyeable', 'eq-dye-' + s.slot, s.dyeable)}`;
+    } else if (s.kind === 'boots') {
+      extra = `<div class="grid">
+        ${numField('Defense Bonus', 'eq-def-' + s.slot, s.defenseBonus, 0, 99)}
+        ${numField('Immunity Bonus', 'eq-imm-' + s.slot, s.immunityBonus, 0, 99)}
+      </div>`;
+    }
+
+    return `<details class="building-card">
+      <summary>${esc(label)}: ${esc(s.name || s.itemId)}</summary>
+      <div class="grid">
+        ${field('Item ID', 'eq-id-' + s.slot, s.itemId, 'text')}
+        ${field('Name', 'eq-name-' + s.slot, s.name, 'text')}
+      </div>
+      ${extra}
+      <div class="actions">
+        <button class="btn-primary eq-apply-btn" data-slot="${s.slot}" data-kind="${s.kind}">Apply</button>
+        <button class="btn-danger eq-clear-btn" data-slot="${s.slot}">Clear</button>
+      </div>
+    </details>`;
+  }).join('');
+
+  return `<h3 style="margin-top:1.5rem">Equipped Gear</h3>
+    <p class="hint">Shirt and pants are always present. Hats, boots, and rings only
+      appear once equipped in-game.</p>
+    ${cards}`;
+}
+
+function wireEquipment() {
+  document.querySelectorAll('.eq-apply-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const slot = btn.dataset.slot;
+      const kind = btn.dataset.kind;
+      try {
+        call(sdvedit_setEquipmentField, slot, 'itemId', val('eq-id-' + slot));
+        call(sdvedit_setEquipmentField, slot, 'name', val('eq-name-' + slot));
+        if (kind === 'clothing') {
+          call(sdvedit_setEquipmentColor, slot,
+            num('eq-r-' + slot), num('eq-g-' + slot), num('eq-b-' + slot), num('eq-a-' + slot));
+          call(sdvedit_setEquipmentField, slot, 'dyeable', String(checked('eq-dye-' + slot)));
+        } else if (kind === 'boots') {
+          call(sdvedit_setEquipmentField, slot, 'defenseBonus', String(num('eq-def-' + slot)));
+          call(sdvedit_setEquipmentField, slot, 'immunityBonus', String(num('eq-imm-' + slot)));
+        }
+        markDirty();
+        showToast((EQUIP_LABELS[slot] || slot) + ' saved');
+      } catch (e) {
+        showToast(e.message, 'error');
+      }
+    });
+  });
+
+  document.querySelectorAll('.eq-clear-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const slot = btn.dataset.slot;
+      if (!confirm('Clear the ' + (EQUIP_LABELS[slot] || slot) + ' slot?')) return;
+      try {
+        call(sdvedit_clearEquipmentSlot, slot);
+        markDirty();
+        showToast((EQUIP_LABELS[slot] || slot) + ' cleared');
+        loadInventory();
+      } catch (e) {
+        showToast(e.message, 'error');
+      }
+    });
+  });
+
+  document.querySelectorAll('.eq-add-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const slot = btn.dataset.slot;
+      try {
+        call(sdvedit_addClothing, slot, val('eq-add-id-' + slot), val('eq-add-name-' + slot).trim());
+        markDirty();
+        showToast((EQUIP_LABELS[slot] || slot) + ' added');
+        loadInventory();
+      } catch (e) {
+        showToast(e.message, 'error');
       }
     });
   });

@@ -66,6 +66,46 @@ func AddBuilding(root *Node, buildingType string, tileX, tileY int) error {
 	return nil
 }
 
+// RemoveBuilding deletes the Building with the given ID from the farm. It
+// refuses (with an error, leaving the save untouched) if the building still
+// houses animals, so users don't silently orphan livestock.
+func RemoveBuilding(root *Node, buildingID string) error {
+	farm := farmNode(root)
+	if farm == nil {
+		return fmt.Errorf("farm not found")
+	}
+	bldgs := farm.Child("buildings")
+	if bldgs == nil {
+		return fmt.Errorf("buildings not found")
+	}
+	for i, b := range bldgs.Children {
+		if b.Name != "Building" || textOf(b, "id") != buildingID {
+			continue
+		}
+		if n := buildingAnimalCount(b); n > 0 {
+			return fmt.Errorf("building %q still houses %d animal(s); remove or move them first", buildingID, n)
+		}
+		bldgs.Children = append(bldgs.Children[:i], bldgs.Children[i+1:]...)
+		return nil
+	}
+	return fmt.Errorf("building %q not found", buildingID)
+}
+
+// buildingAnimalCount returns how many FarmAnimal entries a building houses.
+func buildingAnimalCount(b *Node) int {
+	dict := animalDict(b)
+	if dict == nil {
+		return 0
+	}
+	count := 0
+	for _, c := range dict.Children {
+		if c.Name == "item" {
+			count++
+		}
+	}
+	return count
+}
+
 func buildBuildingNode(id, buildingType string, tileX, tileY int, def BuildingDef) *Node {
 	nilAttr := []xml.Attr{{Name: xml.Name{Space: "http://www.w3.org/2001/XMLSchema-instance", Local: "nil"}, Value: "true"}}
 

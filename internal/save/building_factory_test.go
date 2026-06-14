@@ -149,3 +149,56 @@ func TestAddBuilding_ThenAddAnimal(t *testing.T) {
 		t.Errorf("animal not found after add: %+v", animals)
 	}
 }
+
+func TestRemoveBuilding_DropsBuilding(t *testing.T) {
+	root, _ := Parse(strings.NewReader(emptyFarmFixture))
+	if err := AddBuilding(root, "Barn", 10, 10); err != nil {
+		t.Fatal(err)
+	}
+	if err := AddBuilding(root, "Silo", 20, 20); err != nil {
+		t.Fatal(err)
+	}
+	var siloID string
+	for _, b := range GetBuildings(root) {
+		if b.BuildingType == "Silo" {
+			siloID = b.ID
+		}
+	}
+
+	if err := RemoveBuilding(root, siloID); err != nil {
+		t.Fatalf("RemoveBuilding: %v", err)
+	}
+
+	bldgs := GetBuildings(root)
+	if len(bldgs) != 1 {
+		t.Fatalf("expected 1 building after remove, got %d", len(bldgs))
+	}
+	if bldgs[0].BuildingType != "Barn" {
+		t.Errorf("surviving building = %q, want Barn", bldgs[0].BuildingType)
+	}
+}
+
+func TestRemoveBuilding_RefusesWhenOccupied(t *testing.T) {
+	root, _ := Parse(strings.NewReader(emptyFarmFixture))
+	if err := AddBuilding(root, "Barn", 10, 10); err != nil {
+		t.Fatal(err)
+	}
+	barnID := GetBuildings(root)[0].ID
+	if err := AddAnimal(root, barnID, "Cow", "Bessie"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RemoveBuilding(root, barnID); err == nil {
+		t.Fatal("expected error removing occupied building")
+	}
+	if len(GetBuildings(root)) != 1 {
+		t.Error("occupied building was removed despite error")
+	}
+}
+
+func TestRemoveBuilding_UnknownID(t *testing.T) {
+	root, _ := Parse(strings.NewReader(emptyFarmFixture))
+	if err := RemoveBuilding(root, "no-such-building"); err == nil {
+		t.Fatal("expected error removing unknown building")
+	}
+}

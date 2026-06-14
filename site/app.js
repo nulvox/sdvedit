@@ -185,6 +185,20 @@ function loadFriendships() {
   const entries = getJSON(sdvedit_getFriendships);
   const pet = getJSON(sdvedit_getPet);
 
+  const known = new Set(entries.map(e => e.npc));
+  const addable = getJSON(sdvedit_knownNPCs).filter(n => !known.has(n)).sort();
+  const addNpcHtml = addable.length ? `
+    <div class="add-animal-form">
+      <h3>Add NPC</h3>
+      <p class="hint">Adds a villager you haven't met yet so you can set their friendship.</p>
+      <div class="grid">
+        ${selectField('Villager', 'fr-new-npc', addable[0], addable)}
+      </div>
+      <div class="actions">
+        <button id="fr-add-btn" class="btn-primary">Add NPC</button>
+      </div>
+    </div>` : '';
+
   const rows = entries.map((e, i) => `
     <tr>
       <td class="npc-name">${esc(e.npc)}</td>
@@ -210,6 +224,18 @@ function loadFriendships() {
       <div class="actions">
         <button id="pet-save-btn" class="btn-primary">Apply Pet Changes</button>
       </div>`;
+  } else {
+    petHtml = `
+      <h3>Pet</h3>
+      <p class="hint">This save has no pet. Add one to set its name, type, and friendship.</p>
+      <div class="grid">
+        ${field('Name', 'pet-new-name', 'Rex')}
+        ${selectField('Type', 'pet-new-type', 'Dog', ['Dog', 'Cat'])}
+        ${petBreedField('Dog', 0)}
+      </div>
+      <div class="actions">
+        <button id="pet-add-btn" class="btn-primary">Add Pet</button>
+      </div>`;
   }
 
   document.getElementById('panel-friendships').innerHTML = `
@@ -227,6 +253,7 @@ function loadFriendships() {
       </thead>
       <tbody>${rows}</tbody>
     </table>
+    ${addNpcHtml}
     ${petHtml}`;
 
   // Update hearts display when points change
@@ -261,17 +288,38 @@ function loadFriendships() {
     showToast('Friendships saved');
   });
 
-  if (pet) {
-    const petTypeSel = document.getElementById('pet-type');
-    const petBreedSel = document.getElementById('pet-breed');
-    petTypeSel.addEventListener('change', () => {
-      const breeds = PET_BREEDS[petTypeSel.value] || [0];
-      const cur = parseInt(petBreedSel.value, 10) || 0;
+  // Rebuild the breed dropdown (id "pet-breed") to match the chosen pet type.
+  function wireBreedToType(typeSelId) {
+    const typeSel = document.getElementById(typeSelId);
+    const breedSel = document.getElementById('pet-breed');
+    if (!typeSel || !breedSel) return;
+    typeSel.addEventListener('change', () => {
+      const breeds = PET_BREEDS[typeSel.value] || [0];
+      const cur = parseInt(breedSel.value, 10) || 0;
       const sel = breeds.includes(cur) ? cur : breeds[0];
-      petBreedSel.innerHTML = breeds
+      breedSel.innerHTML = breeds
         .map(b => `<option value="${b}" ${b === sel ? 'selected' : ''}>${b}</option>`)
         .join('');
     });
+  }
+
+  const addNpcBtn = document.getElementById('fr-add-btn');
+  if (addNpcBtn) {
+    addNpcBtn.addEventListener('click', () => {
+      const npc = val('fr-new-npc');
+      try {
+        call(sdvedit_addFriendship, npc);
+        markDirty();
+        showToast(npc + ' added');
+        loadFriendships();
+      } catch (e) {
+        showToast(e.message, 'error');
+      }
+    });
+  }
+
+  if (pet) {
+    wireBreedToType('pet-type');
 
     document.getElementById('pet-save-btn').addEventListener('click', () => {
       const updated = {
@@ -285,6 +333,22 @@ function loadFriendships() {
       call(sdvedit_setPet, JSON.stringify(updated));
       markDirty();
       showToast(updated.name + ' saved');
+    });
+  } else {
+    wireBreedToType('pet-new-type');
+
+    document.getElementById('pet-add-btn').addEventListener('click', () => {
+      const name = val('pet-new-name').trim() || 'Pet';
+      const type = val('pet-new-type');
+      const breed = num('pet-breed');
+      try {
+        call(sdvedit_addPet, type, name, breed);
+        markDirty();
+        showToast(name + ' added');
+        loadFriendships();
+      } catch (e) {
+        showToast(e.message, 'error');
+      }
     });
   }
 }
@@ -302,6 +366,7 @@ function heartsHtml(points) {
 
 const COOP_TYPES = new Set(['Coop', 'Big Coop', 'Deluxe Coop']);
 const BARN_TYPES = new Set(['Barn', 'Big Barn', 'Deluxe Barn']);
+const COOP_ANIMALS = new Set(['Chicken', 'Duck', 'Rabbit', 'Dinosaur', 'Void Chicken', 'Blue Chicken', 'Golden Chicken']);
 
 function loadAnimals() {
   const animals = getJSON(sdvedit_getAnimals);
@@ -326,7 +391,23 @@ function loadAnimals() {
       </div>
     </div>` : '<p class="hint">No buildings found. Add a Barn or Coop in the Buildings tab first.</p>';
 
-  const rows = animals.map((a, i) => `
+  // Buildings an animal could be moved to: same habitat (coop vs barn),
+  // excluding the one it currently lives in.
+  const moveTargets = (a) => buildings.filter(b => {
+    if (b.id === a.buildingId) return false;
+    return COOP_ANIMALS.has(a.type)
+      ? COOP_TYPES.has(b.buildingType)
+      : BARN_TYPES.has(b.buildingType);
+  });
+
+  const rows = animals.map((a, i) => {
+    const targets = moveTargets(a);
+    const moveCtl = targets.length ? `
+      ${selectField('', 'an-move-' + i, targets[0].id,
+          targets.map(b => b.id),
+          targets.map(b => (b.buildingType || 'Building') + ' (' + b.id.slice(0, 8) + '…)'))}
+      <button class="btn-sm an-move-btn" data-idx="${i}">Move</button>` : '';
+    return `
     <tr>
       <td>${field('', 'an-nm-' + i, a.name)}</td>
       <td>${esc(a.type)}</td>
@@ -336,10 +417,13 @@ function loadAnimals() {
       <td>${numField('', 'an-fl-' + i, a.fullness, 0, 255)}</td>
       <td>${numField('', 'an-ag-' + i, a.age, 0, 999)}</td>
       <td>${numField('', 'an-pq-' + i, a.produceQuality, 0, 4)}</td>
-      <td>
+      <td class="row-actions">
         <button class="btn-sm an-apply-btn" data-idx="${i}">Apply</button>
+        ${moveCtl}
+        <button class="btn-sm btn-danger an-del-btn" data-idx="${i}">Delete</button>
       </td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 
   const tableHtml = animals.length ? `
     <div class="actions">
@@ -380,6 +464,38 @@ function loadAnimals() {
         call(sdvedit_setAnimalField, a.id, 'produceQuality', String(num('an-pq-' + i)));
         markDirty();
         showToast(newName + ' saved');
+      });
+    });
+
+    document.querySelectorAll('.an-move-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const i = parseInt(btn.dataset.idx, 10);
+        const a = animals[i];
+        const target = val('an-move-' + i);
+        try {
+          call(sdvedit_moveAnimal, a.id, target);
+          markDirty();
+          showToast(a.name + ' moved');
+          loadAnimals();
+        } catch (err) {
+          showToast('Error: ' + err.message, 'error');
+        }
+      });
+    });
+
+    document.querySelectorAll('.an-del-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const i = parseInt(btn.dataset.idx, 10);
+        const a = animals[i];
+        if (!confirm('Delete ' + a.name + '? This cannot be undone.')) return;
+        try {
+          call(sdvedit_removeAnimal, a.id);
+          markDirty();
+          showToast(a.name + ' deleted');
+          loadAnimals();
+        } catch (err) {
+          showToast('Error: ' + err.message, 'error');
+        }
       });
     });
   }
@@ -465,6 +581,7 @@ function loadBuildings() {
       </fieldset>
       <div class="actions">
         <button class="btn-primary bl-apply-btn" data-idx="${i}">Apply Changes</button>
+        <button class="btn-danger bl-del-btn" data-idx="${i}">Delete Building</button>
       </div>
     </details>`).join('');
 
@@ -522,6 +639,23 @@ function loadBuildings() {
 
       markDirty();
       showToast((b.buildingType || 'Building') + ' saved');
+    });
+  });
+
+  document.querySelectorAll('.bl-del-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const i = parseInt(btn.dataset.idx, 10);
+      const b = buildings[i];
+      const label = b.buildingType || 'building';
+      if (!confirm('Delete this ' + label + '? This cannot be undone.')) return;
+      try {
+        call(sdvedit_removeBuilding, b.id);
+        markDirty();
+        showToast(label + ' deleted');
+        loadBuildings();
+      } catch (e) {
+        showToast(e.message, 'error');
+      }
     });
   });
 

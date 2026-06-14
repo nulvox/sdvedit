@@ -259,6 +259,7 @@ main {
 .btn-secondary { background: var(--surface2); color: var(--text); }
 .btn-danger   { background: var(--red); color: #fff; }
 .btn-sm       { background: var(--surface2); color: var(--text); padding: 0.25rem 0.6rem; }
+.btn-sm.btn-danger { background: var(--red); color: #fff; }
 
 .btn-primary:hover  { opacity: 0.85; }
 .btn-secondary:hover{ opacity: 0.85; }
@@ -275,6 +276,13 @@ main {
   align-items: center;
   gap: 0.5rem;
   margin-bottom: 1rem;
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
 }
 
 .actions input[type="text"] {

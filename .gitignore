@@ -1,0 +1,8 @@
+# Build artifact: rebuilt by `make build` and regenerated fresh by the
+# GitHub Pages deploy workflow on every push, so it never needs committing.
+/site/main.wasm
+
+# Go build/test output
+*.exe
+*.test
+*.out

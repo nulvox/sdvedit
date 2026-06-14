@@ -39,6 +39,8 @@ func main() {
 	g.Set("sdvedit_setPet", js.FuncOf(jsSetPet))
 	g.Set("sdvedit_getInventory", js.FuncOf(jsGetInventory))
 	g.Set("sdvedit_setInventoryItem", js.FuncOf(jsSetInventoryItem))
+	g.Set("sdvedit_addInventoryItem", js.FuncOf(jsAddInventoryItem))
+	g.Set("sdvedit_itemCatalog", js.FuncOf(jsItemCatalog))
 	g.Set("sdvedit_getCookingRecipes", js.FuncOf(jsGetCookingRecipes))
 	g.Set("sdvedit_setCookingRecipes", js.FuncOf(jsSetCookingRecipes))
 	g.Set("sdvedit_getCraftingRecipes", js.FuncOf(jsGetCraftingRecipes))
@@ -298,6 +300,26 @@ func jsSetInventoryItem(_ js.Value, args []js.Value) any {
 		return errResult(err.Error())
 	}
 	return okResult(nil)
+}
+
+func jsAddInventoryItem(_ js.Value, args []js.Value) any {
+	if state.root == nil {
+		return errResult("no save loaded")
+	}
+	if len(args) < 5 {
+		return errResult("expected (slot, itemId, name, stack, quality)")
+	}
+	err := save.AddInventoryItem(state.root,
+		args[0].Int(), args[1].String(), args[2].String(),
+		args[3].Int(), args[4].Int())
+	if err != nil {
+		return errResult(err.Error())
+	}
+	return okResult(nil)
+}
+
+func jsItemCatalog(_ js.Value, _ []js.Value) any {
+	return jsonResult(save.KnownItemTypes())
 }
 
 func jsGetCookingRecipes(_ js.Value, _ []js.Value) any {

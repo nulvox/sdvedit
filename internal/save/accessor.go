@@ -1,6 +1,7 @@
 package save
 
 import (
+	"encoding/xml"
 	"fmt"
 	"strconv"
 	"strings"
@@ -641,6 +642,163 @@ func SetInventoryItem(root *Node, slot int, stack, quality int) error {
 	setLeaf(item, "stack", strconv.Itoa(stack))
 	setLeaf(item, "quality", strconv.Itoa(quality))
 	return nil
+}
+
+// ItemDef describes an item known to the inventory catalog.
+type ItemDef struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Category  int    `json:"category"`
+	Price     int    `json:"price"`
+	Edibility int    `json:"edibility"`
+}
+
+// itemCatalog is a curated list of common items the user can place into an
+// empty inventory slot. The catalog stays small on purpose — Stardew has
+// thousands of item IDs, and any ID still works through the custom field.
+var itemCatalog = []ItemDef{
+	{"388", "Wood", -16, 2, -300},
+	{"390", "Stone", -16, 2, -300},
+	{"709", "Hardwood", -16, 15, -300},
+	{"92", "Sap", -81, 2, -1},
+	{"378", "Copper Ore", -15, 5, -300},
+	{"380", "Iron Ore", -15, 10, -300},
+	{"384", "Gold Ore", -15, 25, -300},
+	{"386", "Iridium Ore", -15, 100, -300},
+	{"382", "Coal", -15, 15, -300},
+	{"334", "Copper Bar", -15, 60, -300},
+	{"335", "Iron Bar", -15, 120, -300},
+	{"336", "Gold Bar", -15, 250, -300},
+	{"337", "Iridium Bar", -15, 1000, -300},
+	{"338", "Refined Quartz", -15, 50, -300},
+	{"909", "Radioactive Ore", -15, 300, -300},
+	{"910", "Radioactive Bar", -15, 3000, -300},
+	{"535", "Geode", -2, 50, -300},
+	{"536", "Frozen Geode", -2, 100, -300},
+	{"537", "Magma Geode", -2, 150, -300},
+	{"749", "Omni Geode", -2, 0, -300},
+	{"60", "Emerald", -2, 250, -300},
+	{"62", "Aquamarine", -2, 180, -300},
+	{"64", "Ruby", -2, 250, -300},
+	{"66", "Amethyst", -2, 100, -300},
+	{"68", "Topaz", -2, 80, -300},
+	{"70", "Jade", -2, 200, -300},
+	{"72", "Diamond", -2, 750, -300},
+	{"74", "Prismatic Shard", -2, 2000, -300},
+	{"168", "Trash", -20, 0, -300},
+	{"24", "Parsnip", -75, 35, 10},
+	{"190", "Cauliflower", -75, 175, 25},
+	{"192", "Potato", -75, 80, 25},
+	{"256", "Tomato", -75, 60, 20},
+	{"258", "Blueberry", -79, 50, 13},
+	{"260", "Hot Pepper", -79, 40, 13},
+	{"276", "Pumpkin", -75, 320, 30},
+	{"424", "Cheese", -26, 230, 65},
+	{"426", "Goat Cheese", -26, 400, 80},
+	{"344", "Jelly", -26, 160, 50},
+	{"340", "Honey", -26, 100, -300},
+	{"303", "Pale Ale", -26, 300, 0},
+	{"459", "Mead", -26, 200, 30},
+	{"178", "Hay", -16, 50, -300},
+	{"771", "Fiber", -81, 1, -300},
+}
+
+// KnownItemTypes returns the catalog of items known to the editor.
+func KnownItemTypes() []ItemDef {
+	out := make([]ItemDef, len(itemCatalog))
+	copy(out, itemCatalog)
+	return out
+}
+
+// lookupItemDef returns a default ItemDef for an arbitrary itemID; if the ID
+// is not in the catalog, returns a sane "Basic" placeholder.
+func lookupItemDef(itemID string) ItemDef {
+	for _, d := range itemCatalog {
+		if d.ID == itemID {
+			return d
+		}
+	}
+	return ItemDef{ID: itemID, Name: "Item " + itemID, Category: 0, Price: 0, Edibility: -300}
+}
+
+// AddInventoryItem fills an empty inventory slot with a basic Object-type item.
+// Returns an error if the slot index is out of range or already occupied.
+func AddInventoryItem(root *Node, slot int, itemID, name string, stack, quality int) error {
+	items := root.Get("player/items")
+	if items == nil {
+		return fmt.Errorf("items not found")
+	}
+	children := items.ChildrenNamed("Item")
+	if slot < 0 || slot >= len(children) {
+		return fmt.Errorf("slot %d out of range", slot)
+	}
+	item := children[slot]
+	if item.Attr("nil") != "true" {
+		return fmt.Errorf("slot %d is already occupied", slot)
+	}
+	if itemID == "" {
+		return fmt.Errorf("itemID required")
+	}
+	if stack < 1 {
+		stack = 1
+	}
+	def := lookupItemDef(itemID)
+	if name == "" {
+		name = def.Name
+	}
+
+	// Replace xsi:nil="true" with xsi:type="Object" and populate children.
+	item.Attrs = []xml.Attr{{
+		Name:  xml.Name{Space: "http://www.w3.org/2001/XMLSchema-instance", Local: "type"},
+		Value: "Object",
+	}}
+	item.Children = buildObjectItemChildren(itemID, name, stack, quality, def)
+	return nil
+}
+
+func buildObjectItemChildren(itemID, name string, stack, quality int, def ItemDef) []*Node {
+	boundingBox := &Node{Name: "boundingBox", Children: []*Node{
+		leaf("X", "0"), leaf("Y", "0"),
+		leaf("Width", "0"), leaf("Height", "0"),
+		{Name: "Location", Children: []*Node{leaf("X", "0"), leaf("Y", "0")}},
+		{Name: "Size", Children: []*Node{leaf("X", "0"), leaf("Y", "0")}},
+	}}
+	return []*Node{
+		leaf("isLostItem", "false"),
+		leaf("category", strconv.Itoa(def.Category)),
+		leaf("hasBeenInInventory", "true"),
+		leaf("name", name),
+		leaf("parentSheetIndex", itemID),
+		leaf("itemId", itemID),
+		leaf("specialItem", "false"),
+		leaf("isRecipe", "false"),
+		leaf("quality", strconv.Itoa(quality)),
+		leaf("stack", strconv.Itoa(stack)),
+		leaf("SpecialVariable", "0"),
+		{Name: "tileLocation", Children: []*Node{leaf("X", "0"), leaf("Y", "0")}},
+		leaf("owner", "0"),
+		leaf("type", "Basic"),
+		leaf("canBeSetDown", "true"),
+		leaf("canBeGrabbed", "true"),
+		leaf("isSpawnedObject", "false"),
+		leaf("questItem", "false"),
+		leaf("isOn", "true"),
+		leaf("fragility", "0"),
+		leaf("price", strconv.Itoa(def.Price)),
+		leaf("edibility", strconv.Itoa(def.Edibility)),
+		leaf("bigCraftable", "false"),
+		leaf("setOutdoors", "false"),
+		leaf("setIndoors", "false"),
+		leaf("readyForHarvest", "false"),
+		leaf("showNextIndex", "false"),
+		leaf("flipped", "false"),
+		leaf("isLamp", "false"),
+		leaf("minutesUntilReady", "0"),
+		boundingBox,
+		{Name: "scale", Children: []*Node{leaf("X", "0"), leaf("Y", "0")}},
+		leaf("uses", "0"),
+		leaf("destroyOvernight", "false"),
+	}
 }
 
 // --- Bundles ---

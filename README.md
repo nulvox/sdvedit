@@ -2,6 +2,8 @@
 
 A full-featured Stardew Valley save editor that runs entirely in your browser — no installation, no server, no data ever leaves your machine.
 
+**Live editor:** [https://nulvox.github.io/sdvedit/](https://nulvox.github.io/sdvedit/)
+
 [![CI](https://github.com/nulvox/sdvedit/actions/workflows/ci.yml/badge.svg)](https://github.com/nulvox/sdvedit/actions/workflows/ci.yml)
 [![GitHub Sponsors](https://img.shields.io/github/sponsors/nulvox)](https://github.com/sponsors/nulvox)
 
